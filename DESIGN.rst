@@ -1,8 +1,7 @@
 Design
 ======
 
-I describe the high-level design I've come up with for
-PyNodes here.
+Below I describe the high-level design of PyNodes.
 
 I build up the model from basic principles, starting
 with a description of the conceptual model, followed 
