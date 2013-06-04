@@ -1,19 +1,26 @@
 import functools
 
-class Node(object):
-    """All graph nodes are built around the notion of a core
-    computation, which can be bypassed by a setting a node
-    value specifically (where the node has that option).
+class NodeBase(object):
+    """All nodes belong to a single graph, and have one or more
+    edges to other nodes in the same graph.
+
+    Subclasses can add additional attributes, etc., but
+    in general flags should be set to indicate the state
+    and/or options set on a node as well.
+
+    A user can optionally set a key on the node to
+    differentiate it from other nodes of the same class.
+    It is up to the user to ensure the key is unique
+    for every node in the graph.
 
     """
-    DEFAULT   = 0x0000
+    DEFAULT = 0x0000
     SETTABLE  = 0x0001
 
-    def __init__(self, graph, key=None, computation=None, handlers=None):
+    def __init__(self, graph, key, flags=DEFAULT):
         self._graph = graph
         self._key = key
-        self._computation = computation
-        self._handlers = handlers or {}
+        self._flags = flags
         self._inputNodes = set()
         self._outputNodes = set()
 
@@ -22,64 +29,74 @@ class Node(object):
         return self._graph
 
     @property
-    def computation(self):
-        # compute, tracking inputs, and invalidating outputs
-        return self._computation
-
-    @property
-    def edges(self):
-        return self._edges
-
-    @property
     def key(self):
         return self._key
 
+    @property
+    def flags(self):
+        return self._flags
+
+    @property
+    def settable(self):
+        return self.flags & self.SETTABLE
+
+    @property
+    def dataStore(self):
+        return self.graph.dataStore
+
     def value(self, dataStore=None):
+        raise NotImplementedError()
+
+class Node(NodeBase):
+    """All graph nodes are built around the notion of a core
+    computation, which can be bypassed by a setting a node
+    value specifically (where the node has that option).
+
+    A computation is a Python callable that accepts no
+    arguments.  (This doesn't mean you can't compute
+    a function with arguments; it just means you need to
+    bind the arguments first, using, say, functools.partial,
+    before you initialize the node.)
+
+    """
+
+    def __init__(self, graph, key=None, computation=None, flags=NodeBase.DEFAULT):
+        super(Node, self).__init__(graph, key, flags=flags)
+        self._computation = computation
+
+    @property
+    def computation(self):
+        return self._computation
+
+    def data(self, dataStore=None):
         return self.graph.nodeData(self, dataStore=dataStore)
 
+    def value(self, dataStore=None):
+        return self.graph.nodeValue(self, dataStore=dataStore)
+
     def compute(self, dataStore=None):
-        return self.graph.compute(self, dataStore=dataStore)
+        return self.graph.nodeCompute(self, dataStore=dataStore)
 
     def calced(self, dataStore=None):
-        return self.graph.calced(self, dataStore=dataStore)
+        return self.data(dataStore).calced
 
     def fixed(self, dataStore=None):
-        return self.graph.fixed(self, dataStore=dataStore)
+        return self.data(dataStored).fixed
 
     def valid(self, dataStore=None):
-        return self.graph.valid(self, dataStore=dataStore)
+        return self.data(dataStored).valid 
 
-
-class ObjectMethodComputation(object):
-    def __init__(self, obj, method):
-        self.obj = obj
-        self.method = method
-
-    def __call__(self, node):
-        return self.method(self.obj, *self.args)
-
-class ClassMethodComputation(object):
-    def __init__(self, cls):
-        self.cls = cls
-        self.method = method
-
-class StaticComputation(object):
-    def __init__(self, value):
-        self.value = value
-
-    def __call__(self):
-        return self.value
-
-class NodeData(object):
+class NodeDataBase(object):
     INVALID = 0x0000
     CALCED  = 0x0001
     FIXED   = 0x0002
 
-    def __init__(self, node, dataStore, value=None, status=INVALID):
+class NodeData(NodeDataBase):
+    def __init__(self, node, dataStore, value=None, status=NodeDataBase.INVALID):
         self._node = node
         self._dataStore = dataStore
-        self.value = value
-        self.status = status
+        self._value = value
+        self._status = status
 
     @property
     def node(self):
@@ -88,6 +105,10 @@ class NodeData(object):
     @property
     def dataStore(self):
         return self._dataStore
+
+    @property
+    def status(self):
+        return self._status
 
     @property
     def calced(self):
@@ -105,18 +126,6 @@ class NodeData(object):
     def dataStore(self):
         return self._dataStore
 
-class GraphStack(list):
-
-    @property
-    def top(self):
-        return self[-1]
-
-    @property
-    def bottom(self):
-        return self[0]
-
-    push = list.append
-
 class Graph(object):
 
     def __init__(self, dataStoreClass=None):
@@ -129,56 +138,103 @@ class Graph(object):
         return self._dataStore
 
     def nodeKey(self, computation):
-        return hash(computation)        # Temporary.
+        """Returns a key for the node given its underlying computation.
 
-    def nodeResolve(self, computation, addIfMissing=True):
+        At the moment this computation is what distinctly identifies
+        a node in the graph.
+
+        """
+        return hash(computation)
+
+    def nodeResolve(self, computation, createIfMissing=False):
+        """Given a computation, attempts to find the node in
+        the graph.
+
+        If it doesn't exist and addIfMissing is set to True,
+        a new node is created and added to the graph.
+
+        """
         key = self.nodeKey(computation)
         node = self._nodesByKey.get(key)
-        if not node and addIfMissing:
-            node = self.nodeCreate(computation)
-            self.nodeAdd(node)
+        if not node and createIfMissing:
+            node = self.nodeCreate(key, computation)
         return node
 
-    def nodeCreate(self, computation):
-        return Node(computation)
+    def nodeCreate(self, key, computation):
+        """Creates a new node, identified by key, based on the
+        specified computation, and adds it to the graph.
 
-    def nodeAdd(self, node):
-        if node.key in self._nodesByKey:
+        If the node already exists, a RuntimeError is raised.
+
+        Returns the new node.
+
+        """
+        if key in self._nodesByKey:
             raise RuntimeError("The node with key %s already exists in this graph.")
-        self._nodesByKey[node.key] = node
+        node = self._nodesByKey[key] = Node(self, key, computation)
+        return node
 
     def nodeDelete(self, node):
-        pass
+        """Removes the node from the graph, if it exists
+        and if and only if the node has no inputs or outputs.
 
-    def nodeData(self, node):
-        nodeData = self.dataStore.nodeData(node)
-        return nodeData
+        """
+        raise NotImplementedError("Not yet implemented, nor clear that we should.")
 
+    def nodeData(self, node, createIfMissing=False):
+        """Returns any node data for the object, if it exists.
 
-    def nodeValue(self, node):
-        nodeData = self.nodeData(node)
-        if not nodeData:
-            # No data for this node in any active data stores.
-            # Create node in base data store (remember this is the 
-            # graph side).
-            nodeData = self.dataStore.nodeData(node, createIfMissing=True)
+        If it doesn't exist and createIfMissing is a false,
+        a new NodeData object is created in the data store
+        and then returned.
 
+        """
+        return self.dataStore.nodeData(node, createIfMissing=createIfMissing)
 
+    def nodeValue(self, node, computeInvalid=True):
+        """Returns a value for the given node, recomputing if necessary.
 
-    def nodeComputeValue(self, node):
-        pass
+        If the final value returned is not valid, we raise an exception.
+
+        """
+        print node
+        nodeData = self.dataStore.nodeData(node, createIfMissing=True)
+        if nodeData.valid:
+            return nodeData.value
+        # TODO: Compute if necessary.
+        raise NotImplementedError()
+
+    def nodeComputeValue(self, node, force=False):
+        # TODO: Compute the value if necesary.
+        #       If force is True, recompute, even if the value is valid.
+        #       Strictly speaking this should not be necessary, and I
+        #       may remove the option at some point.
+        raise NotImplementedError()
 
     def nodeSetValue(self, node, value):
-        pass
+        # TODO: Set the node's value, if it's settable.
+        #       Any old set values will be overwritten.
+        raise NotImplementedError()
 
     def nodeUnsetValue(self, node):
-        pass
+        # TODO: Unset the node's value if it's set, reverting to the
+        #       default computation.  If the value is not set, raises
+        #       an error.
+        raise NotImplementedError()
 
+    def nodeCalced(self, node):
+        return node.calced(self.dataStore)
+
+    def nodeFixed(self, node):
+        return node.fixed(self.dataStore)
+
+    def nodeValid(self, node):
+        return node.valid(self.dataStore)
 
 class GraphDataStore(object):
     def __init__(self, graph):
         self._graph = graph
-        self._nodeData = {}
+        self._nodeDataByNodeKey = {}
 
     @property
     def graph(self):
@@ -189,112 +245,24 @@ class GraphDataStore(object):
         or any of its parents.
 
         """
-        nodeData = self._nodeData.get(node.key)
+        print node
+        nodeData = self._nodeDataByNodeKey.get(node.key)
         if not nodeData and createIfMissing:
-            nodeData = self._nodeData[node.key] = NodeData(node, self)
+            nodeData = self._nodeDataByNodeKey[node.key] = NodeData(node, self)
         return nodeData
 
     def nodeValue(self, node):
         nodeData = self.nodeData(node)
         if nodeData and nodeData.valid:
-            nodeData.value
+            return nodeData.value
         raise Exception("No node data, or node data invalid.")
 
-    def __enter__(self):
-        """Activates this dataStore.  Note that this is subtly
-        different from the parent hierarchy.  There is no
-        implication that the currently active store (from
-        the graph's perspective) is a parent of this store.
-        This may be the case, for example, when the store
-        is applied following its creation, or is created
-        with a specific parent.
-
-        There are two options; store the 'active' stack
-        in the graph and the 'inactive' stack (parent) here.
-        or both here.  we always need the inactive stack
-        here because otherwise we can't decouple the store
-        for persistence or later loading.
-
-        note that when entering 'active' mode, calced values
-        are cached and used where necessary, but when exiting
-        all cached values are removed from the data store
-        so as to avoid wasting memory.
-
-        any and all fixed values, however, remain active
-        in the store from when they are added until they
-        are removed.
-
-        the idea is that the data store serves two purposes:
-        on the one hand it acts as a pure fixed value store.
-        on the other hand, it is also a cache for an active
-        graph so it can differentiate node data calculated
-        based on set values in this data store from those
-        set in the active parent store.
-
-        """
-        self._graph._dataStoreStack.push(self)
-
-    def __exit__(self, *args):
-        self._graph._dataStoreStack.pop()
-
-# client interface
-#
-# we need to get from method defined on a class to a NODE 
-#    the node reprs a callable AND its arguments
-#    two possbilities here:
-#        we can create custom argument for this
-#        or we can create a partial that has already does this binding
-#        
-#    in either case, we STILL need to go from a class to a node call
-#
-#    a class function itself is not enough, we don't know what instance it's at
-#    but a user will define code statically, so we know the node framework has
-#    to be set up then.  the pythonic way is with a decorator
-#
-#    we also know that an object + class function is not enough.  we need args.
-#
-#    So:
-#        in code the use can declare which methods are node computations, but
-#        the impl can't stop there.
-#
-#        it needs the object.  so when an object is created do we need to
-#        create something else?  
-#
-#        not sure.  let's assume we have some way of determining which fns
-#        are nodes; they aren't really nodes yet but we need to mark them
-#        as needing to be lifted to nodes at an appropriate time
-#
-#        when i first wrote this i though i needed an object-method level
-#        handle and an object-method-args handle, but i don't think i need
-#        the object method handle. instead i can possibly dynamically
-#        check the first arg and if its an instance of ... i forgot, we need
-#        some way to mark the class as one supporting these functions,
-#        otherwise i can't do this test.  but i think if i bypass the object
-#        piece, and so a late binding, i can get rid of the need to 
-#        override __init__.  oh... no i can't.  dammit, there is no way around
-#        the need for the extra level of indirection.
-#
-#        we a class to declare a class method as a node computation placeholder
-#        we need a decorator that replaces the (class) method call with this object.
-#        when i create an instance, i need to now replace the class method-specific
-#        object with one that has a handle on the object just created and the
-#        original class-level method object
-#
-#        then when somebody -calls- the method we must finally create the 
-#        node computation, as this is the level at which graph decision
-#        dependencies should be tracked
-#
-#        class Sample(GraphObject):
-#            def regularMethod(self):
-#                ...
-#
-#            @graphNode
-#            def nodeMethod(self):
-#                ...
-#
-#
-
 class DeferredNode(object):
+    """A deferred node allows one to wrap callables for later resolution
+    to a node when the full details needed for the resolution are not
+    available until runtime.
+
+    """
     def __init__(self, method, **kwargs):
         self.method = method
         self.instance = None
@@ -305,8 +273,8 @@ class DeferredNode(object):
     def computation(self, *args):
         return functools.partial(self.method, self.instance, *args)
 
-    def resolve(self, *args):
-        return _graph.nodeResolve(self.computation(args))
+    def resolve(self, createIfMissing=True, *args):
+        return _graph.nodeResolve(self.computation(args), createIfMissing=createIfMissing)
 
     def __get__(self, instance, *args):
         self.instance = instance
