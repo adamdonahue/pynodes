@@ -126,11 +126,24 @@ class NodeData(NodeDataBase):
     def dataStore(self):
         return self._dataStore
 
+class GraphState(object):
+    """Collects run-time state for a graph.  At the moment
+    this means keeping track of which node is being
+    computed so that we can built a dynamic dependency
+    tree.
+
+    """
+    def __init__(self, graph):
+        self._graph = graph
+        self._activeNode = None
+
 class Graph(object):
 
-    def __init__(self, dataStoreClass=None):
+    def __init__(self, dataStoreClass=None, stateClass=None):
         self._dataStoreClass = dataStoreClass or GraphDataStore
         self._dataStore = self._dataStoreClass(self)
+        self._stateClass = stateClass or GraphState
+        self._state = self._stateClass(self)
         self._nodesByKey = {}
 
     @property
@@ -209,6 +222,10 @@ class Graph(object):
         #       If force is True, recompute, even if the value is valid.
         #       Strictly speaking this should not be necessary, and I
         #       may remove the option at some point.
+        #
+        # It's also here we track node dependencies.  See FIXME
+        # below regarding an issue with argument handling that
+        # needs to be addressed.
         raise NotImplementedError()
 
     def nodeSetValue(self, node, value):
@@ -256,6 +273,63 @@ class GraphDataStore(object):
         if nodeData and nodeData.valid:
             return nodeData.value
         raise Exception("No node data, or node data invalid.")
+
+### FIXME ####
+# args here are very broken; if a user passes in another node as an 
+# argument to the function (i.e., calls a deferredNode decorated 
+# method), that node is an INPUT to the function.  But at the 
+# moment the logic for building the graph is based on a top-level
+# call stack and node dependencies in the BODY of the function
+#
+# For example:
+#
+#    @deferredNode
+#    def X(self, y):
+#        ...
+#
+# and a call
+#
+#    obj.X(obj.Y())
+#
+# X clearly depends on the value of Y.  But from the graph
+# perspective this will be two separate calls -- one to Y,
+# and one to X with a materialized value from Y (we've lost
+# the dependency tracking here, because when Y completes
+# the activeNode (from the graph's perspective) is back
+# to being None.  It's also a potential race condition
+# if we're using this to lock the graph from further 
+# mutation, but i need to see if that's actually the case.
+# 
+# The obvious solution is to handle the args in a more
+# special way.  We go ahead and check args passed in
+# for their types, too, and when those types are deferred
+# nodes we add the arguments as additional dependencies.
+# this might be tricky; i'm loathe to add a special
+# 'stamp' to return values that are generated from nodes,
+# but by the time X is called (above) the value for Y
+# would have been decoupled from its node.  
+# 
+# of course, one can work around this, but it's clumsy:
+#
+#    @deferredNode
+#    def X(self):
+#        y = self.Y() 
+#        ...
+# 
+#    @deferredNode(SETTABLE)
+#    def Y(self):
+#        return ...
+#
+#    obj.Y = val
+#    obj.X()
+#
+# this now tracks the dependency tree, but we'll need
+# to make sure args aren't passed to any graph functions.
+#
+# I'll mull over this more.  Maybe I'm missing something obvious.
+#   
+
+#  
 
 class DeferredNode(object):
     """A deferred node allows one to wrap callables for later resolution
