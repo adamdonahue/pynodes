@@ -219,12 +219,51 @@ class GraphDataStore(object):
         is applied following its creation, or is created
         with a specific parent.
 
+        There are two options; store the 'active' stack
+        in the graph and the 'inactive' stack (parent) here.
+        or both here.  we always need the inactive stack
+        here because otherwise we can't decouple the store
+        for persistence or later loading.
+
+        note that when entering 'active' mode, calced values
+        are cached and used where necessary, but when exiting
+        all cached values are removed from the data store
+        so as to avoid wasting memory.
+
+        any and all fixed values, however, remain active
+        in the store from when they are added until they
+        are removed.
+
+        the idea is that the data store serves to purposes:
+        on the one hand it acts as a pure fixed value store.
+
+        on the other hand, it is also a cache for an active
+        graph so it can differentiate node data calculated
+        based on set values in this data store from those
+        set in the active parent store.
+
         """
         self._graph._dataStoreStack.push(self)
 
     def __exit__(self, *args):
         self._graph._dataStoreStack.pop()
 
+# client interface
+#
+# we need to get from method defined on a class to a NODE 
+#    the node reprs a callable AND its arguments
+#    two possbilities here:
+#        we can create custom argument for this
+#        or we can create a partial that has already does this binding
+#        
+#    in either case, we STILL need to go from a class to a node call
+#
+#    a class function itself is not enough, we don't know what instance it's at
+#    but a user will define code statically, so we know the node framework has
+#    to be set up then.  the pythonic way is with a decorator
+#
+#    we also know that an object + class function is not enough.  
+#
 class GraphObject(object):
 
     def __init__(self):
