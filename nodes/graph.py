@@ -310,75 +310,45 @@ class GraphDataStore(object):
 #
 #
 
-class AbstractNode(object):
-    def __init__(self, method, options=None):
-        self.method = method
-        self.options = options
-        
 class DeferredNode(object):
-    def __init__(self, abstractNode, obj):
-        self.abstractNode = abstractNode
-        self.obj = obj
+    def __init__(self, method, *kwargs):
+        self.method = method
+        self.instance = None
+        self.computation = None
 
-    def computation(self, args=()):
-        return functools.partial(self.method, self.obj, *args)
-        
+    def isBound(self):
+        return bool(self.instance)
+
+    def computation(self):
+        return functools.partial(self.method, self.instance, *args)
+
     def resolve(self, args=()):
-        return _graph.nodeResolve(self.computation())
+        return _graph.nodeResolve(self.computation(args))
+
+    def __get__(self, instance, class_):
+        self.instance = instance
+        return self
 
     def __call__(self, *args):
+        if not self.isBound():
+            raise RuntimeError("You cannot call an unbound node-enabled method.")
         return _graph.nodeValue(self.resolve(args))
-           
-class GraphObject(object):
 
-    def __init__(self):
-        # We need this, otherwise we can't return an object in 
-        # the decorator, because the object won't be bound,
-        # and we'll lose the context of the original object.
-        
-        # so basically we need to find all the DeferredNodes,
-        # which were created statically, and then link them
-        # to individual instances.
-        
-        # Note that we're calling object.__setattr__ because
-        # we are also overloading __setattr__ in graph object
-        # support the x.y = z syntax
-        for k in dir(self):
-            v = getattr(self, k)
-            if isinstance(v, AbstractNode):
-                object.__setattr__(self, k, DeferredNode(v, self))
-        
-        # I think i can get rid of the arg checks for now, but I 
-        # may add them back; in theory args are inputs, too, which
-        # was my thinking the first go-around, but then, there
-        # plenty of non-graph inputs
-        #
-        # if i call x(y()) and y is a node object, it's already
-        # going to be picked up as a dependency so it shouldn't
-        # require special handling.
-        #
-        # oh wait, yes it will.  top level.  we'll need that 
-        # after all. TODO
-        
-    def __setattr__(self, k, v):
-        v_ = getattr(self, k)
-        if isinstance(v_, DeferredNode):
-            pass  # call the appropriate deferred node method
-        
-class GraphClassGenericComputation(object):
-    pass
+def node(f, options=None, *args, **kwargs):
+    """Marks a function as an (as yet unbound) deferred node for
+    the graph.
 
-class GraphMethodComputation(object):
-    pass
+    A deferred node becomes a real node when the underlying
+    computation (the decorated function) is called with a
+    particular set of argument values.
 
-class GraphMethodCallComputation(object):
-    pass
+    Users can decorate functions in two ways:
+        @node(*args, **kwargs)      Allowing for decorator options.
+        @node                       Shortcut for @node()
 
-def node(callableOrOptions, options=None, *args, **kwargs):
-    if callable(callableOrOptions):
-        pass   # Called as @node
-    else:
-        pass   # Called as @node()
-
-
-
+    """
+    if not callable(f):
+        def wrapper(g):
+            return node(g, f)
+        return wrapper
+    return DeferredNode(f, options=options)
