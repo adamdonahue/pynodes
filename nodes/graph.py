@@ -27,16 +27,12 @@ class Node(object):
         return self._computation
 
     @property
-    def delegate(self):
-        return self._delegate
-
-    @property
     def edges(self):
         return self._edges
 
     @property
     def key(self):
-        return self._key or hash(self)
+        return self._key
 
     def value(self, dataStore=None):
         return self.graph.nodeData(self, dataStore=dataStore)
@@ -53,8 +49,6 @@ class Node(object):
     def valid(self, dataStore=None):
         return self.graph.valid(self, dataStore=dataStore)
 
-    def __hash__(self):
-       return hash((self.__class__, self.computation, self.delegate))
 
 class ObjectMethodComputation(object):
     def __init__(self, obj, method):
@@ -111,9 +105,6 @@ class NodeData(object):
     def dataStore(self):
         return self._dataStore
 
-    def __hash__(self):
-        return hash((self.__class__, self.node, self.dataStore))
-
 class GraphStack(list):
 
     @property
@@ -130,34 +121,37 @@ class Graph(object):
 
     def __init__(self, dataStoreClass=None):
         self._dataStoreClass = dataStoreClass or GraphDataStore
-        self._dataStoreStack = GraphStack([self._dataStoreClass(self)])
-        self._nodes = {}
+        self._dataStore = self._dataStoreClass(self)
+        self._nodesByKey = {}
 
     @property
-    def activeDataStore(self):
-        return self._dataStoreStack.top
+    def dataStore(self):
+        return self._dataStore
 
-    @property
-    def baseDataStore(self):
-        return self._dataStoreStack.bottom
+    def nodeKey(self, computation):
+        return hash(computation)        # Temporary.
 
-    def nodeResolve(self, computation, args=()):
-        # TODO: This somehow needs to resolve to a real node
-        pass
+    def nodeResolve(self, computation, addIfMissing=True):
+        key = self.nodeKey(computation)
+        node = self._nodesByKey.get(key)
+        if not node and addIfMissing:
+            node = self.nodeCreate(computation)
+            self.nodeAdd(node)
+        return node
+
+    def nodeCreate(self, computation):
+        return Node(computation)
 
     def nodeAdd(self, node):
-        if node.key in self._nodes:
+        if node.key in self._nodesByKey:
             raise RuntimeError("The node with key %s already exists in this graph.")
-        self._nodes[node.key] = node
+        self._nodesByKey[node.key] = node
 
     def nodeDelete(self, node):
         pass
 
     def nodeData(self, node):
-        for dataStore in reversed(self._dataStoreStack):
-            nodeData = dataStore.nodeData(node)
-            if nodeData:
-                break
+        nodeData = self.dataStore.nodeData(node)
         return nodeData
 
 
@@ -167,7 +161,7 @@ class Graph(object):
             # No data for this node in any active data stores.
             # Create node in base data store (remember this is the 
             # graph side).
-            nodeData = self.baseDataStore.nodeData(node, createIfMissing=True)
+            nodeData = self.dataStore.nodeData(node, createIfMissing=True)
 
 
 
@@ -182,30 +176,20 @@ class Graph(object):
 
 
 class GraphDataStore(object):
-    def __init__(self, graph, parentDataStore=None):
+    def __init__(self, graph):
         self._graph = graph
-        self._parentDataStore = parentDataStore
         self._nodeData = {}
 
     @property
     def graph(self):
         return self._graph
 
-    @property
-    def parentDataStore(self):
-        return self._parentDataStore
-
     def nodeData(self, node, createIfMissing=False):
         """Returns a NodeData object from this data store
         or any of its parents.
 
         """
-        searching = self
-        while searching:
-            nodeData = self._nodeData.get(node.key)
-            if nodeData:
-                break
-            searching = searching.parentDataStore
+        nodeData = self._nodeData.get(node.key)
         if not nodeData and createIfMissing:
             nodeData = self._nodeData[node.key] = NodeData(node, self)
         return nodeData
@@ -314,26 +298,24 @@ class DeferredNode(object):
     def __init__(self, method, **kwargs):
         self.method = method
         self.instance = None
-        self.computation = None
 
     def isBound(self):
         return bool(self.instance)
 
-    def computation(self):
+    def computation(self, *args):
         return functools.partial(self.method, self.instance, *args)
 
-    def resolve(self, args=()):
+    def resolve(self, *args):
         return _graph.nodeResolve(self.computation(args))
 
-    def __get__(self, instance, class_):
+    def __get__(self, instance, *args):
         self.instance = instance
         return self
 
     def __call__(self, *args):
         if not self.isBound():
             raise RuntimeError("You cannot call an unbound node-enabled method.")
-        print self.resolve(args)
-        return _graph.nodeValue(self.resolve(args))
+        return _graph.nodeValue(self.resolve(*args))
 
 def deferredNode(f=None, options=None, *args, **kwargs):
     """Marks a function as a (as yet unbound) deferred node for
@@ -350,6 +332,9 @@ def deferredNode(f=None, options=None, *args, **kwargs):
     """
     if not callable(f):
         def wrapper(g):
-            return node(g, f)
+            return deferredNode(g, f)
         return wrapper
     return DeferredNode(f, options=options)
+
+_graph = Graph()        # We need somewhere to start!
+
