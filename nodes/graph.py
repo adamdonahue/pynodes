@@ -1,4 +1,8 @@
 class Node(object):
+    """All graph nodes are built around the idea of potentially
+    overridable (fixable) computations.
+
+    """
     NODE_DEFAULT = 0x0000
     NODE_FIXABLE = 0x0001
     NODE_DELEGATE_FIXINGS = 0x0002
@@ -17,6 +21,7 @@ class Node(object):
 
     @property
     def computation(self):
+        # compute, tracking inputs, and invalidating outputs
         return self._computation
 
     @property
@@ -48,6 +53,26 @@ class Node(object):
 
     def __hash__(self):
        return hash((self.__class__, self.computation, self.delegate))
+
+class ObjectMethodComputation(object):
+    def __init__(self, obj, method):
+        self.obj = obj
+        self.method = method
+
+    def __call__(self, node):
+        return self.method(self.obj, *self.args)
+
+class ClassMethodComputation(object):
+    def __init__(self, cls):
+        self.cls = cls
+        self.method = method
+
+class StaticComputation(object):
+    def __init__(self, value):
+        self.value = value
+
+    def __call__(self):
+        return self.value
 
 class NodeData(object):
     INVALID = 0x0000
@@ -200,9 +225,25 @@ class GraphDataStore(object):
     def __exit__(self, *args):
         self._graph._dataStoreStack.pop()
 
-if __name__ == '__main__':
-    graph = Graph()
-    node = Node(graph)
-    graph.nodeAdd(node)
-    print graph
-    print graph.nodeData(node)
+class GraphObject(object):
+
+    def __init__(self):
+        pass
+
+class GraphClassGenericComputation(object):
+    pass
+
+class GraphMethodComputation(object):
+    pass
+
+class GraphMethodCallComputation(object):
+    pass
+
+def node(callableOrOptions, options=None, *args, **kwargs):
+    if callable(callableOrOptions):
+        pass   # Called as @node
+    else:
+        pass   # Called as @node()
+
+
+
