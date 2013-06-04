@@ -262,7 +262,38 @@ class GraphDataStore(object):
 #    but a user will define code statically, so we know the node framework has
 #    to be set up then.  the pythonic way is with a decorator
 #
-#    we also know that an object + class function is not enough.  
+#    we also know that an object + class function is not enough.  we need args.
+#
+#    So:
+#        in code the use can declare which methods are node computations, but
+#        the impl can't stop there.
+#
+#        it needs the object.  so when an object is created do we need to
+#        create something else?  
+#
+#        not sure.  let's assume we have some way of determining which fns
+#        are nodes; they aren't really nodes yet but we need to mark them
+#        as needing to be lifted to nodes at an appropriate time
+#
+#        when i first wrote this i though i needed an object-method level
+#        handle and an object-method-args handle, but i don't think i need
+#        the object method handle. instead i can possibly dynamically
+#        check the first arg and if its an instance of ... i forgot, we need
+#        some way to mark the class as one supporting these functions,
+#        otherwise i can't do this test.  but i think if i bypass the object
+#        piece, and so a late binding, i can get rid of the need to 
+#        override __init__.  oh... no i can't.  dammit, there is no way around
+#        the need for the extra level of indirection.
+#
+#        we a class to declare a class method as a node computation placeholder
+#        we need a decorator that replaces the (class) method call with this object.
+#        when i create an instance, i need to now replace the class method-specific
+#        object with one that has a handle on the object just created and the
+#        original class-level method object
+#
+#        then when somebody -calls- the method we must finally create the 
+#        node computation, as this is the level at which graph decision
+#        dependencies should be tracked
 #
 class GraphObject(object):
 
