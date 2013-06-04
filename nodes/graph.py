@@ -144,7 +144,7 @@ class Graph(object):
     def nodeResolve(self, computation, args=()):
         # TODO: This somehow needs to resolve to a real node
         pass
-    
+
     def nodeAdd(self, node):
         if node.key in self._nodes:
             raise RuntimeError("The node with key %s already exists in this graph.")
@@ -311,7 +311,7 @@ class GraphDataStore(object):
 #
 
 class DeferredNode(object):
-    def __init__(self, method, *kwargs):
+    def __init__(self, method, **kwargs):
         self.method = method
         self.instance = None
         self.computation = None
@@ -332,10 +332,11 @@ class DeferredNode(object):
     def __call__(self, *args):
         if not self.isBound():
             raise RuntimeError("You cannot call an unbound node-enabled method.")
+        print self.resolve(args)
         return _graph.nodeValue(self.resolve(args))
 
-def node(f, options=None, *args, **kwargs):
-    """Marks a function as an (as yet unbound) deferred node for
+def deferredNode(f=None, options=None, *args, **kwargs):
+    """Marks a function as a (as yet unbound) deferred node for
     the graph.
 
     A deferred node becomes a real node when the underlying
