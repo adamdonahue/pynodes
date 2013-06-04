@@ -1,17 +1,19 @@
+import functools
+
 class Node(object):
-    """All graph nodes are built around the idea of potentially
-    overridable (fixable) computations.
+    """All graph nodes are built around the notion of a core
+    computation, which can be bypassed by a setting a node
+    value specifically (where the node has that option).
 
     """
-    NODE_DEFAULT = 0x0000
-    NODE_FIXABLE = 0x0001
-    NODE_DELEGATE_FIXINGS = 0x0002
+    DEFAULT   = 0x0000
+    SETTABLE  = 0x0001
 
-    def __init__(self, graph, key=None, computation=None, delegate=None):
+    def __init__(self, graph, key=None, computation=None, handlers=None):
         self._graph = graph
         self._key = key
         self._computation = computation
-        self._delegate = delegate
+        self._handlers = handlers or {}
         self._inputNodes = set()
         self._outputNodes = set()
 
@@ -139,6 +141,10 @@ class Graph(object):
     def baseDataStore(self):
         return self._dataStoreStack.bottom
 
+    def nodeResolve(self, computation, args=()):
+        # TODO: This somehow needs to resolve to a real node
+        pass
+    
     def nodeAdd(self, node):
         if node.key in self._nodes:
             raise RuntimeError("The node with key %s already exists in this graph.")
@@ -234,9 +240,8 @@ class GraphDataStore(object):
         in the store from when they are added until they
         are removed.
 
-        the idea is that the data store serves to purposes:
+        the idea is that the data store serves two purposes:
         on the one hand it acts as a pure fixed value store.
-
         on the other hand, it is also a cache for an active
         graph so it can differentiate node data calculated
         based on set values in this data store from those
@@ -295,11 +300,71 @@ class GraphDataStore(object):
 #        node computation, as this is the level at which graph decision
 #        dependencies should be tracked
 #
+#        class Sample(GraphObject):
+#            def regularMethod(self):
+#                ...
+#
+#            @graphNode
+#            def nodeMethod(self):
+#                ...
+#
+#
+
+class AbstractNode(object):
+    def __init__(self, method, options=None):
+        self.method = method
+        self.options = options
+        
+class DeferredNode(object):
+    def __init__(self, abstractNode, obj):
+        self.abstractNode = abstractNode
+        self.obj = obj
+
+    def computation(self, args=()):
+        return functools.partial(self.method, self.obj, *args)
+        
+    def resolve(self, args=()):
+        return _graph.nodeResolve(self.computation())
+
+    def __call__(self, *args):
+        return _graph.nodeValue(self.resolve(args))
+           
 class GraphObject(object):
 
     def __init__(self):
-        pass
-
+        # We need this, otherwise we can't return an object in 
+        # the decorator, because the object won't be bound,
+        # and we'll lose the context of the original object.
+        
+        # so basically we need to find all the DeferredNodes,
+        # which were created statically, and then link them
+        # to individual instances.
+        
+        # Note that we're calling object.__setattr__ because
+        # we are also overloading __setattr__ in graph object
+        # support the x.y = z syntax
+        for k in dir(self):
+            v = getattr(self, k)
+            if isinstance(v, AbstractNode):
+                object.__setattr__(self, k, DeferredNode(v, self))
+        
+        # I think i can get rid of the arg checks for now, but I 
+        # may add them back; in theory args are inputs, too, which
+        # was my thinking the first go-around, but then, there
+        # plenty of non-graph inputs
+        #
+        # if i call x(y()) and y is a node object, it's already
+        # going to be picked up as a dependency so it shouldn't
+        # require special handling.
+        #
+        # oh wait, yes it will.  top level.  we'll need that 
+        # after all. TODO
+        
+    def __setattr__(self, k, v):
+        v_ = getattr(self, k)
+        if isinstance(v_, DeferredNode):
+            pass  # call the appropriate deferred node method
+        
 class GraphClassGenericComputation(object):
     pass
 
