@@ -8,8 +8,9 @@ class NodeBase(object):
     in general flags should be set to indicate the state
     and/or options set on a node as well.
 
-    A user can optionally set a key on the node to
-    differentiate it from other nodes of the same class.
+    Each node must have a key that differentiates it
+    from other nodes of the same class.
+
     It is up to the user to ensure the key is unique
     for every node in the graph.
 
@@ -210,23 +211,25 @@ class Graph(object):
         If the final value returned is not valid, we raise an exception.
 
         """
-        print node
         nodeData = self.dataStore.nodeData(node, createIfMissing=True)
         if nodeData.valid:
             return nodeData.value
+        return self.nodeComputeValue(node)
         # TODO: Compute if necessary.
         raise NotImplementedError()
 
     def nodeComputeValue(self, node, force=False):
-        # TODO: Compute the value if necesary.
-        #       If force is True, recompute, even if the value is valid.
-        #       Strictly speaking this should not be necessary, and I
-        #       may remove the option at some point.
-        #
-        # It's also here we track node dependencies.  See FIXME
-        # below regarding an issue with argument handling that
-        # needs to be addressed.
-        raise NotImplementedError()
+        # FIXME: Not working, just testing.
+        if self._state._activeNode:
+            self._state._activeNode._inputNodes.add(node)
+            node._outputNodes.add(self._state._activeNode)
+        try:
+            self.previousNode = self._state._activeNode
+            self._state._activeNode = node
+            value = node.computation()
+        finally:
+            self._state._activeNode = self.previousNode
+        return value 
 
     def nodeSetValue(self, node, value):
         # TODO: Set the node's value, if it's settable.
@@ -262,7 +265,6 @@ class GraphDataStore(object):
         or any of its parents.
 
         """
-        print node
         nodeData = self._nodeDataByNodeKey.get(node.key)
         if not nodeData and createIfMissing:
             nodeData = self._nodeDataByNodeKey[node.key] = NodeData(node, self)
@@ -273,63 +275,6 @@ class GraphDataStore(object):
         if nodeData and nodeData.valid:
             return nodeData.value
         raise Exception("No node data, or node data invalid.")
-
-### FIXME ####
-# args here are very broken; if a user passes in another node as an 
-# argument to the function (i.e., calls a deferredNode decorated 
-# method), that node is an INPUT to the function.  But at the 
-# moment the logic for building the graph is based on a top-level
-# call stack and node dependencies in the BODY of the function
-#
-# For example:
-#
-#    @deferredNode
-#    def X(self, y):
-#        ...
-#
-# and a call
-#
-#    obj.X(obj.Y())
-#
-# X clearly depends on the value of Y.  But from the graph
-# perspective this will be two separate calls -- one to Y,
-# and one to X with a materialized value from Y (we've lost
-# the dependency tracking here, because when Y completes
-# the activeNode (from the graph's perspective) is back
-# to being None.  It's also a potential race condition
-# if we're using this to lock the graph from further 
-# mutation, but i need to see if that's actually the case.
-# 
-# The obvious solution is to handle the args in a more
-# special way.  We go ahead and check args passed in
-# for their types, too, and when those types are deferred
-# nodes we add the arguments as additional dependencies.
-# this might be tricky; i'm loathe to add a special
-# 'stamp' to return values that are generated from nodes,
-# but by the time X is called (above) the value for Y
-# would have been decoupled from its node.  
-# 
-# of course, one can work around this, but it's clumsy:
-#
-#    @deferredNode
-#    def X(self):
-#        y = self.Y() 
-#        ...
-# 
-#    @deferredNode(SETTABLE)
-#    def Y(self):
-#        return ...
-#
-#    obj.Y = val
-#    obj.X()
-#
-# this now tracks the dependency tree, but we'll need
-# to make sure args aren't passed to any graph functions.
-#
-# I'll mull over this more.  Maybe I'm missing something obvious.
-#   
-
-#  
 
 class DeferredNode(object):
     """A deferred node allows one to wrap callables for later resolution
@@ -348,7 +293,7 @@ class DeferredNode(object):
         return functools.partial(self.method, self.instance, *args)
 
     def resolve(self, createIfMissing=True, *args):
-        return _graph.nodeResolve(self.computation(args), createIfMissing=createIfMissing)
+        return _graph.nodeResolve(self.computation(*args), createIfMissing=createIfMissing)
 
     def __get__(self, instance, *args):
         self.instance = instance
@@ -357,7 +302,8 @@ class DeferredNode(object):
     def __call__(self, *args):
         if not self.isBound():
             raise RuntimeError("You cannot call an unbound node-enabled method.")
-        return _graph.nodeValue(self.resolve(*args))
+        node = self.resolve(*args)
+        return _graph.nodeValue(node)
 
 def deferredNode(f=None, options=None, *args, **kwargs):
     """Marks a function as a (as yet unbound) deferred node for
@@ -379,4 +325,3 @@ def deferredNode(f=None, options=None, *args, **kwargs):
     return DeferredNode(f, options=options)
 
 _graph = Graph()        # We need somewhere to start!
-
