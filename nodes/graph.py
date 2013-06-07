@@ -1,4 +1,5 @@
 import functools
+import inspect
 
 class NodeBase(object):
     """All nodes belong to a single graph, and have one or more
@@ -299,25 +300,27 @@ class DeferredNode(object):
     """
     def __init__(self, func, **kwargs):
         self.func = func
+        self.argspec = inspect.getargspec(func)
         self.obj = None    # Set if the function is later bound to an object.
 
     def isBound(self):
         return bool(self.obj)
 
     def isConsistent(self, *args):
-        return len(args) == self.func.func_code.co_argcount
+        if self.argspec.varargs:
+            return len(args) >= self.func.func_code.co_argcount
+        else:
+            return len(args) == self.func.func_code.co_argcount
 
     def computation(self, *args):
-        # TODO: If the arg count passed in here and the arg of the function 
-        #       itself do not match, raise an exception.  But shouldn't this
-        #       happen automatically, anyhow, when the function is finally
-        #       called?
         if self.isBound():
             args = (self.obj,) + args
+        if not self.isConsistent(*args):
+            raise RuntimeError("Missing or too many arguments.")
         return Computation(self.func, *args)
 
-    def resolve(self, createIfMissing=True, *args):
-        return _graph.nodeResolve(self.computation(*args), createIfMissing=createIfMissing)
+    def resolve(self, *args, **kwargs):
+        return _graph.nodeResolve(self.computation(*args))
 
     def __get__(self, obj, *args):
         self.obj = obj
