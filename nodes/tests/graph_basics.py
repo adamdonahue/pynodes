@@ -53,6 +53,33 @@ class GraphTestCase(unittest.TestCase):
         self.assertEquals(simpleCalc.g(), 'fg')
         self.assertEquals(simpleCalc.h(), 'fh')
 
+    def test_args_consistency(self):
+        class ArgsConsistency(object):
+            @graph.deferredNode
+            def f(self):
+                return
+
+            @graph.deferredNode
+            def g(self, x):
+                return
+
+            @graph.deferredNode
+            def h(self, x, y, *args):
+                return
+
+        ac = ArgsConsistency()
+        ac.f()
+        # SHOULD FAIL: ac.f(None)
+        # SHOULD FAIL: ac.g()
+        ac.g(None)
+        # SHOULD FAIL: ac.g(None, None)
+        # SHOULD FAIL: ac.h()
+        # SHOULD FAIL: ac.h(None)
+        ac.h(None, None)
+        ac.h(None, None, None)
+        ac.h(*[None,None])
+        ac.h(*[None,None,None])
+
     def test_dependencies(self):
         class Dependencies(object):
             @graph.deferredNode
