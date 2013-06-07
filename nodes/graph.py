@@ -16,7 +16,7 @@ class NodeBase(object):
 
     """
     DEFAULT = 0x0000
-    SETTABLE  = 0x0001
+    SETTABLE = 0x0001
 
     def __init__(self, graph, key, flags=DEFAULT):
         self._graph = graph
@@ -41,11 +41,7 @@ class NodeBase(object):
     def settable(self):
         return self.flags & self.SETTABLE
 
-    @property
-    def dataStore(self):
-        return self.graph.dataStore
-
-    def value(self, dataStore=None):
+    def value(self):
         raise NotImplementedError()
 
 class Node(NodeBase):
@@ -69,23 +65,23 @@ class Node(NodeBase):
     def computation(self):
         return self._computation
 
-    def data(self, dataStore=None):
-        return self.graph.nodeData(self, dataStore=dataStore)
+    def data(self):
+        return self.graph.nodeData(self)
 
-    def value(self, dataStore=None):
-        return self.graph.nodeValue(self, dataStore=dataStore)
+    def value(self):
+        return self.graph.nodeValue(self)
 
-    def compute(self, dataStore=None):
-        return self.graph.nodeCompute(self, dataStore=dataStore)
+    def compute(self):
+        return self.graph.nodeCompute(self)
 
-    def calced(self, dataStore=None):
-        return self.data(dataStore).calced
+    def calced(self):
+        return self.data().calced
 
-    def fixed(self, dataStore=None):
-        return self.data(dataStored).fixed
+    def fixed(self):
+        return self.data().fixed
 
-    def valid(self, dataStore=None):
-        return self.data(dataStored).valid 
+    def valid(self):
+        return self.data().valid
 
 class NodeDataBase(object):
     INVALID = 0x0000
@@ -108,6 +104,12 @@ class NodeData(NodeDataBase):
         return self._dataStore
 
     @property
+    def value(self):
+        if not self.valid:
+            raise RuntimeError("The node is invalid and must be recomputed in order to get its value.")
+        return self._value
+
+    @property
     def status(self):
         return self._status
 
@@ -123,10 +125,6 @@ class NodeData(NodeDataBase):
     def valid(self):
         return self.calced | self.fixed
 
-    @property
-    def dataStore(self):
-        return self._dataStore
-
 class GraphState(object):
     """Collects run-time state for a graph.  At the moment
     this means keeping track of which node is being
@@ -136,7 +134,7 @@ class GraphState(object):
     """
     def __init__(self, graph):
         self._graph = graph
-        self._activeNode = None
+        self._activeParentNode = None
 
 class Graph(object):
 
@@ -160,7 +158,7 @@ class Graph(object):
         """
         return hash(computation)
 
-    def nodeResolve(self, computation, createIfMissing=False):
+    def nodeResolve(self, computation, createIfMissing=True):
         """Given a computation, attempts to find the node in
         the graph.
 
@@ -195,15 +193,19 @@ class Graph(object):
         """
         raise NotImplementedError("Not yet implemented, nor clear that we should.")
 
-    def nodeData(self, node, createIfMissing=False):
+    def nodeData(self, node, createIfMissing=True):
         """Returns any node data for the object, if it exists.
 
-        If it doesn't exist and createIfMissing is a false,
-        a new NodeData object is created in the data store
-        and then returned.
+        If it doesn't exist and createIfMissing is True,
+        a new NodeData object for the node is created in the
+        data store and then returned.
 
         """
         return self.dataStore.nodeData(node, createIfMissing=createIfMissing)
+
+    def nodeAddDependency(self, node, dependency):
+        node._inputNodes.add(dependency)
+        dependency._outputNodes.add(node)
 
     def nodeValue(self, node, computeInvalid=True):
         """Returns a value for the given node, recomputing if necessary.
@@ -211,25 +213,24 @@ class Graph(object):
         If the final value returned is not valid, we raise an exception.
 
         """
-        nodeData = self.dataStore.nodeData(node, createIfMissing=True)
-        if nodeData.valid:
-            return nodeData.value
-        return self.nodeComputeValue(node)
-        # TODO: Compute if necessary.
-        raise NotImplementedError()
+        #
+        #   Track the dependencies, even if the node data
+        #   is valid.  We may have picked up a new output.
+        #
+        if self._state._activeParentNode:
+            self.nodeAddDependency(self._state._activeParentNode, node)
 
-    def nodeComputeValue(self, node, force=False):
-        # FIXME: Not working, just testing.
-        if self._state._activeNode:
-            self._state._activeNode._inputNodes.add(node)
-            node._outputNodes.add(self._state._activeNode)
+        nodeData = self.nodeData(node)
+        if not nodeData.valid and not computeInvalid:
+            raise RuntimeError("Node is invalid and computeInvalid is False.")
         try:
-            self.previousNode = self._state._activeNode
-            self._state._activeNode = node
-            value = node.computation()
+            savedParentNode = self._state._activeParentNode
+            self._state._activeParentNode = node
+            nodeData._value = node.computation()
+            nodeData._status = NodeData.CALCED
         finally:
-            self._state._activeNode = self.previousNode
-        return value 
+            self._state._activeParentNode = savedParentNode
+        return nodeData.value
 
     def nodeSetValue(self, node, value):
         # TODO: Set the node's value, if it's settable.
@@ -243,13 +244,13 @@ class Graph(object):
         raise NotImplementedError()
 
     def nodeCalced(self, node):
-        return node.calced(self.dataStore)
+        return node.calced()
 
     def nodeFixed(self, node):
-        return node.fixed(self.dataStore)
+        return node.fixed()
 
     def nodeValid(self, node):
-        return node.valid(self.dataStore)
+        return node.valid()
 
 class GraphDataStore(object):
     def __init__(self, graph):
@@ -260,21 +261,35 @@ class GraphDataStore(object):
     def graph(self):
         return self._graph
 
-    def nodeData(self, node, createIfMissing=False):
+    def nodeData(self, node, createIfMissing=True):
         """Returns a NodeData object from this data store
         or any of its parents.
 
         """
-        nodeData = self._nodeDataByNodeKey.get(node.key)
-        if not nodeData and createIfMissing:
-            nodeData = self._nodeDataByNodeKey[node.key] = NodeData(node, self)
-        return nodeData
+        if node.key not in self._nodeDataByNodeKey and createIfMissing:
+            self._nodeDataByNodeKey[node.key] = NodeData(node, self)
+        return self._nodeDataByNodeKey.get(node.key)
 
-    def nodeValue(self, node):
-        nodeData = self.nodeData(node)
-        if nodeData and nodeData.valid:
-            return nodeData.value
-        raise Exception("No node data, or node data invalid.")
+# FIXME: We want the key before the computation is created,
+#        because the code here means we create a new object every
+#        time we get a deferred node's value, even if a node
+#        for that computation has already been created.
+#
+class Computation(functools.partial):
+    """Represents a node computation.
+
+    This is essentially a functools.partial with an overriden
+    __hash__ function so that a given function and set of
+    arguments returns the same hash value.
+
+    """
+    def __init__(self, func, *args, **kwargs):
+        if kwargs:
+            raise RuntimeError("The graph does not yet support keyword arguments.")
+        super(Computation, self).__init__(self, *args)
+
+    def __hash__(self):
+        return hash((self.func, self.args))
 
 class DeferredNode(object):
     """A deferred node allows one to wrap callables for later resolution
@@ -282,28 +297,34 @@ class DeferredNode(object):
     available until runtime.
 
     """
-    def __init__(self, method, **kwargs):
-        self.method = method
-        self.instance = None
+    def __init__(self, func, **kwargs):
+        self.func = func
+        self.obj = None    # Set if the function is later bound to an object.
 
     def isBound(self):
-        return bool(self.instance)
+        return bool(self.obj)
+
+    def isConsistent(self, *args):
+        return len(args) == self.func.func_code.co_argcount
 
     def computation(self, *args):
-        return functools.partial(self.method, self.instance, *args)
+        # TODO: If the arg count passed in here and the arg of the function 
+        #       itself do not match, raise an exception.  But shouldn't this
+        #       happen automatically, anyhow, when the function is finally
+        #       called?
+        if self.isBound():
+            args = (self.obj,) + args
+        return Computation(self.func, *args)
 
     def resolve(self, createIfMissing=True, *args):
         return _graph.nodeResolve(self.computation(*args), createIfMissing=createIfMissing)
 
-    def __get__(self, instance, *args):
-        self.instance = instance
+    def __get__(self, obj, *args):
+        self.obj = obj
         return self
 
     def __call__(self, *args):
-        if not self.isBound():
-            raise RuntimeError("You cannot call an unbound node-enabled method.")
-        node = self.resolve(*args)
-        return _graph.nodeValue(node)
+        return _graph.nodeValue(self.resolve(*args))
 
 def deferredNode(f=None, options=None, *args, **kwargs):
     """Marks a function as a (as yet unbound) deferred node for
@@ -316,6 +337,10 @@ def deferredNode(f=None, options=None, *args, **kwargs):
     Users can decorate functions in two ways:
         @node(*args, **kwargs)      Allowing for decorator options.
         @node                       Shortcut for @node()
+
+    deferredNode can be applied to stand-alone functions or
+    those that will be later bound to an instance, and gracefully
+    handles both cases.
 
     """
     if not callable(f):
