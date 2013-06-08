@@ -40,7 +40,7 @@ class NodeBase(object):
 
     @property
     def settable(self):
-        return self.flags & self.SETTABLE
+        return bool(self.flags & self.SETTABLE)
 
     def value(self):
         raise NotImplementedError()
@@ -75,9 +75,6 @@ class Node(NodeBase):
     def compute(self):
         return self.graph.nodeCompute(self)
 
-    def calced(self):
-        return self.data().calced
-
     def fixed(self):
         return self.data().fixed
 
@@ -86,15 +83,14 @@ class Node(NodeBase):
 
 class NodeDataBase(object):
     INVALID = 0x0000
-    CALCED  = 0x0001
-    FIXED   = 0x0002
+    VALID = 0x0001
+    FIXED = 0x0002
 
 class NodeData(NodeDataBase):
-    def __init__(self, node, dataStore, value=None, status=NodeDataBase.INVALID):
+    def __init__(self, node, dataStore):
         self._node = node
         self._dataStore = dataStore
-        self._value = value
-        self._status = status
+        self._flags = NodeDataBase.INVALID
 
     @property
     def node(self):
@@ -111,20 +107,16 @@ class NodeData(NodeDataBase):
         return self._value
 
     @property
-    def status(self):
-        return self._status
-
-    @property
-    def calced(self):
-        return self.status & self.CALCED
+    def flags(self):
+        return self._flags
 
     @property
     def fixed(self):
-        return self.status & self.FIXED
+        return bool(self.flags & self.FIXED)
 
     @property
     def valid(self):
-        return self.calced | self.fixed
+        return bool(self.flags & self.VALID)
 
 class GraphState(object):
     """Collects run-time state for a graph.  At the moment
@@ -230,37 +222,38 @@ class Graph(object):
             savedParentNode = self._state._activeParentNode
             self._state._activeParentNode = node
             nodeData._value = node.computation()
-            nodeData._status = NodeData.CALCED
+            nodeData._flags |= nodeData.VALID
         finally:
             self._state._activeParentNode = savedParentNode
         return nodeData.value
 
     def nodeSetValue(self, node, value):
-        # TODO: Set the node's value, if it's settable.
-        #       Any old set values will be overwritten.
         nodeData = self.nodeData(node)
         if nodeData.fixed and nodeData.value == value:
             return
-        nodeData._status = nodeData.FIXED
         nodeData._value = value
+        nodeData._flags |= (nodeData.FIXED|nodeData.VALID)
+        self.nodeInvalidateOutputs(node)
+
+    def nodeUnsetValue(self, node):
+        nodeData = self.nodeData(node)
+        if not nodeData.fixed:
+            raise RuntimeError("You cannot unset a node that is not set to a value.")
+        del nodeData._value
+        nodeData._flags &= ~(nodeData.FIXED|nodeData.VALID)
         self.nodeInvalidateOutputs(node)
 
     def nodeInvalidateOutputs(self, node):
-        print 'OUTPUT', node._outputNodes
         outputs = list(node._outputNodes)
         while outputs:
             output = outputs.pop()
             outputData = self.nodeData(output)
-            outputData._status = NodeData.INVALID
-            outputData._value = None    # FIXME: Delete perhaps?
+            if outputData.fixed:
+                continue
+            outputData._flags &= ~NodeData.VALID
+            del outputData._value
             outputs.extend(list(output._outputNodes))
         return
-
-    def nodeUnsetValue(self, node):
-        # TODO: Unset the node's value if it's set, reverting to the
-        #       default computation.  If the value is not set, raises
-        #       an error.
-        raise NotImplementedError()
 
     def nodeCalced(self, node):
         return node.calced()
@@ -310,6 +303,22 @@ class Computation(functools.partial):
     def __hash__(self):
         return hash((self.func, self.args))
 
+class GraphObject(object):
+    """All classes that provide node-enabled methods should
+    inherit, directly or indirectly, from this class.  Such
+    inheritance may become a requirement in a future version,
+    but for now this enables some helpful features such as
+    the ability to directly set a node on the object without
+    having to call setValue.
+
+    """
+    def __setattr__(self, n, v):
+        obj = self.__getattribute__(n)
+        if isinstance(obj, DeferredNode):
+            obj.setValue(v)
+            return
+        super(GraphEnabled, self).__setattr__(n, v)
+
 class DeferredNode(object):
     """A deferred node allows one to wrap callables for later resolution
     to a node when the full details needed for the resolution are not
@@ -349,6 +358,11 @@ class DeferredNode(object):
         if not self.settable:
             raise RuntimeError("This node cannot be set.")
         _graph.nodeSetValue(self.resolve(*args), value)
+
+    def unsetValue(self, *args):
+        if not self.settable:
+            raise RuntimeError("This node cannot be unset.")
+        _graph.nodeUnsetValue(self.resolve(*args))
 
     def __get__(self, obj, *args):
         self.obj = obj

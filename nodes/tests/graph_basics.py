@@ -4,7 +4,7 @@ import unittest
 class GraphTestCase(unittest.TestCase):
 
     def test_deferredNode(self):
-        class T(object):
+        class T(graph.GraphObject): 
             @graph.deferredNode
             def f(self):
                 return True
@@ -13,7 +13,7 @@ class GraphTestCase(unittest.TestCase):
             def g(self):
                 return False
 
-            @graph.deferredNode(options={})
+            @graph.deferredNode(graph.SETTABLE)
             def h(self):
                 return None
 
@@ -35,7 +35,7 @@ class GraphTestCase(unittest.TestCase):
         self.assertTrue(t.h.isBound())
 
     def test_simpleCalc(self):
-        class SimpleCalc(object):
+        class SimpleCalc(graph.GraphObject):
             @graph.deferredNode
             def f(self):
                 return 'f'
@@ -53,8 +53,92 @@ class GraphTestCase(unittest.TestCase):
         self.assertEquals(simpleCalc.g(), 'fg')
         self.assertEquals(simpleCalc.h(), 'fh')
 
+    def test_simpleSet(self):
+        class SimpleSet(graph.GraphObject):
+            @graph.deferredNode
+            def f(self):
+                return 'f' + self.g()
+
+            @graph.deferredNode(graph.SETTABLE)
+            def g(self):
+                return 'g' + self.h()
+
+            @graph.deferredNode(graph.SETTABLE)
+            def h(self):
+                return 'h'
+
+        s = SimpleSet()
+
+        self.assertFalse(s.f.resolve().valid())
+        self.assertFalse(s.g.resolve().valid())
+        self.assertFalse(s.f.resolve().fixed())
+        self.assertFalse(s.g.resolve().fixed())
+        self.assertEquals(s.g(), 'gh')
+        self.assertFalse(s.f.resolve().valid())
+        self.assertTrue(s.g.resolve().valid())
+        self.assertFalse(s.f.resolve().fixed())
+        self.assertFalse(s.g.resolve().fixed())
+        self.assertEquals(s.f(), 'fgh')
+        self.assertTrue(s.f.resolve().valid())
+        self.assertTrue(s.g.resolve().valid())
+        self.assertFalse(s.f.resolve().fixed())
+        self.assertFalse(s.g.resolve().fixed())
+        s.g.setValue('G')
+        self.assertFalse(s.f.resolve().valid())
+        self.assertTrue(s.g.resolve().valid())
+        self.assertFalse(s.f.resolve().fixed())
+        self.assertTrue(s.g.resolve().fixed())
+        self.assertEquals(s.g(), 'G')
+        self.assertEquals(s.f(), 'fG')
+        s.g.unsetValue()
+        self.assertFalse(s.f.resolve().valid())
+        self.assertFalse(s.g.resolve().valid())
+        self.assertFalse(s.f.resolve().fixed())
+        self.assertFalse(s.g.resolve().fixed())
+        self.assertEquals(s.g(), 'gh')
+        self.assertFalse(s.f.resolve().valid())
+        self.assertTrue(s.g.resolve().valid())
+        self.assertFalse(s.f.resolve().fixed())
+        self.assertFalse(s.g.resolve().fixed())
+        self.assertEquals(s.f(), 'fgh')
+        self.assertTrue(s.f.resolve().valid())
+        self.assertTrue(s.g.resolve().valid())
+        self.assertFalse(s.f.resolve().fixed())
+        self.assertFalse(s.g.resolve().fixed())
+        s.g = 'G'
+        self.assertFalse(s.f.resolve().valid())
+        self.assertTrue(s.g.resolve().valid())
+        self.assertFalse(s.f.resolve().fixed())
+        self.assertTrue(s.g.resolve().fixed())
+        self.assertEquals(s.g(), 'G')
+        self.assertEquals(s.f(), 'fG')
+        s.h = 'H'
+        self.assertTrue(s.f.resolve().valid())
+        self.assertTrue(s.g.resolve().valid())
+        self.assertFalse(s.f.resolve().fixed())
+        self.assertTrue(s.g.resolve().fixed())
+        self.assertEquals(s.g(), 'G')
+        self.assertEquals(s.f(), 'fG')
+        self.assertEquals(s.h(), 'H')
+        s.g.unsetValue()
+        self.assertFalse(s.f.resolve().valid())
+        self.assertFalse(s.g.resolve().valid())
+        self.assertFalse(s.f.resolve().fixed())
+        self.assertFalse(s.g.resolve().fixed())
+        self.assertEquals(s.g(), 'gH')
+        self.assertEquals(s.f(), 'fgH')
+        self.assertEquals(s.h(), 'H')
+        s.h.unsetValue()
+        self.assertFalse(s.f.resolve().valid())
+        self.assertFalse(s.g.resolve().valid())
+        self.assertFalse(s.f.resolve().fixed())
+        self.assertFalse(s.g.resolve().fixed())
+        self.assertEquals(s.g(), 'gh')
+        self.assertEquals(s.f(), 'fgh')
+        self.assertEquals(s.h(), 'h')
+
     def test_args_consistency(self):
-        class ArgsConsistency(object):
+        class ArgsConsistency(graph.GraphObject):
             @graph.deferredNode
             def f(self):
                 return
@@ -81,7 +165,7 @@ class GraphTestCase(unittest.TestCase):
         ac.h(*[None,None,None])
 
     def test_dependencies(self):
-        class Dependencies(object):
+        class Dependencies(graph.GraphObject):
             @graph.deferredNode
             def f(self):
                 return 'f' + self.g() + m()
