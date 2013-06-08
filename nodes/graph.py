@@ -224,6 +224,8 @@ class Graph(object):
         nodeData = self.nodeData(node)
         if not nodeData.valid and not computeInvalid:
             raise RuntimeError("Node is invalid and computeInvalid is False.")
+        if nodeData.fixed:
+            return nodeData.value
         try:
             savedParentNode = self._state._activeParentNode
             self._state._activeParentNode = node
@@ -236,7 +238,23 @@ class Graph(object):
     def nodeSetValue(self, node, value):
         # TODO: Set the node's value, if it's settable.
         #       Any old set values will be overwritten.
-        raise NotImplementedError()
+        nodeData = self.nodeData(node)
+        if nodeData.fixed and nodeData.value == value:
+            return
+        nodeData._status = nodeData.FIXED
+        nodeData._value = value
+        self.nodeInvalidateOutputs(node)
+
+    def nodeInvalidateOutputs(self, node):
+        print 'OUTPUT', node._outputNodes
+        outputs = list(node._outputNodes)
+        while outputs:
+            output = outputs.pop()
+            outputData = self.nodeData(output)
+            outputData._status = NodeData.INVALID
+            outputData._value = None    # FIXME: Delete perhaps?
+            outputs.extend(list(output._outputNodes))
+        return
 
     def nodeUnsetValue(self, node):
         # TODO: Unset the node's value if it's set, reverting to the
@@ -298,9 +316,10 @@ class DeferredNode(object):
     available until runtime.
 
     """
-    def __init__(self, func, **kwargs):
+    def __init__(self, func, flags=Node.DEFAULT):
         self.func = func
         self.argspec = inspect.getargspec(func)
+        self.flags = flags
         self.obj = None    # Set if the function is later bound to an object.
 
     def isBound(self):
@@ -319,8 +338,17 @@ class DeferredNode(object):
             raise RuntimeError("Missing or too many arguments.")
         return Computation(self.func, *args)
 
-    def resolve(self, *args, **kwargs):
+    def resolve(self, *args):
         return _graph.nodeResolve(self.computation(*args))
+
+    @property
+    def settable(self):
+        return bool(self.flags & Node.SETTABLE)
+
+    def setValue(self, value, *args):
+        if not self.settable:
+            raise RuntimeError("This node cannot be set.")
+        _graph.nodeSetValue(self.resolve(*args), value)
 
     def __get__(self, obj, *args):
         self.obj = obj
@@ -329,7 +357,10 @@ class DeferredNode(object):
     def __call__(self, *args):
         return _graph.nodeValue(self.resolve(*args))
 
-def deferredNode(f=None, options=None, *args, **kwargs):
+DEFAULT = Node.DEFAULT
+SETTABLE = Node.SETTABLE
+
+def deferredNode(f=None, flags=DEFAULT, *args, **kwargs):
     """Marks a function as a (as yet unbound) deferred node for
     the graph.
 
@@ -350,6 +381,6 @@ def deferredNode(f=None, options=None, *args, **kwargs):
         def wrapper(g):
             return deferredNode(g, f)
         return wrapper
-    return DeferredNode(f, options=options)
+    return DeferredNode(f, flags=flags)
 
 _graph = Graph()        # We need somewhere to start!
