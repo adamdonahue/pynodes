@@ -313,7 +313,7 @@ class GraphObject(object):
 
     """
     def __setattr__(self, n, v):
-        obj = self.__getattribute__(n)
+        obj = getattr(self, n)
         if isinstance(obj, DeferredNode):
             obj.setValue(v)
             return
@@ -329,10 +329,9 @@ class DeferredNode(object):
         self.func = func
         self.argspec = inspect.getargspec(func)
         self.flags = flags
-        self.obj = None    # Set if the function is later bound to an object.
 
     def isBound(self):
-        return bool(self.obj)
+        return bool(getattr(self, 'obj', None))
 
     def isConsistent(self, *args):
         if self.argspec.varargs:
@@ -397,4 +396,4 @@ def deferredNode(f=None, flags=DEFAULT, *args, **kwargs):
         return wrapper
     return DeferredNode(f, flags=flags)
 
-_graph = Graph()        # We need somewhere to start!
+_graph = Graph()        # We need somewhere to start.
