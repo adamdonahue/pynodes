@@ -216,7 +216,7 @@ class Graph(object):
         nodeData = self.nodeData(node)
         if not nodeData.valid and not computeInvalid:
             raise RuntimeError("Node is invalid and computeInvalid is False.")
-        if nodeData.fixed:
+        if nodeData.valid:
             return nodeData.value
         try:
             savedParentNode = self._state._activeParentNode
