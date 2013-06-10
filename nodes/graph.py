@@ -214,10 +214,10 @@ class Graph(object):
             self.nodeAddDependency(self._state._activeParentNode, node)
 
         nodeData = self.nodeData(node)
-        if not nodeData.valid and not computeInvalid:
-            raise RuntimeError("Node is invalid and computeInvalid is False.")
         if nodeData.valid:
             return nodeData.value
+        if not nodeData.valid and not computeInvalid:
+            raise RuntimeError("Node is invalid and computeInvalid is False.")
         try:
             savedParentNode = self._state._activeParentNode
             self._state._activeParentNode = node
@@ -238,7 +238,7 @@ class Graph(object):
     def nodeUnsetValue(self, node):
         nodeData = self.nodeData(node)
         if not nodeData.fixed:
-            raise RuntimeError("You cannot unset a node that is not set to a value.")
+            raise RuntimeError("You cannot unset a value that hasn't been set.")
         del nodeData._value
         nodeData._flags &= ~(nodeData.FIXED|nodeData.VALID)
         self.nodeInvalidateOutputs(node)
