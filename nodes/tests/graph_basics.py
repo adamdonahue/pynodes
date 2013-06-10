@@ -327,5 +327,32 @@ class GraphTestCase(unittest.TestCase):
                     return
         self.assertRaises(makeGraphObjectSubclass)
 
+    def test_init(self):
+        class InitTest(graph.GraphObject):
+            @graph.deferredNode(graph.SETTABLE)
+            def f(self):
+                return None
+
+            @graph.deferredNode(graph.SETTABLE)
+            def g(self):
+                return None
+
+        i = InitTest()
+        self.assertIsNone(i.f())
+        self.assertIsNone(i.g())
+
+        i = InitTest(f='x')
+        self.assertEquals(i.f(), 'x')
+        self.assertIsNone(i.g())
+
+        i = InitTest(f='x', g='y')
+        self.assertEquals(i.f(), 'x')
+        self.assertEquals(i.g(), 'y')
+
+        i.f.unsetValue()
+        i.g.unsetValue()
+        self.assertIsNone(i.f())
+        self.assertIsNone(i.g())
+
 if __name__ == '__main__':
     unittest.main()

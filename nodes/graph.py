@@ -324,6 +324,12 @@ class GraphObject(object):
     """
     __metaclass__ = GraphType
 
+    def __init__(self, **kwargs):
+        for k,v in kwargs.iteritems():
+            candidate = getattr(self, k)
+            if isinstance(candidate, DeferredNode):
+                self.__setattr__(k, v)
+
     def __setattr__(self, n, v):
         obj = getattr(self, n)
         if isinstance(obj, DeferredNode):
