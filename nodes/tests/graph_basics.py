@@ -320,6 +320,12 @@ class GraphTestCase(unittest.TestCase):
         self.assertEquals(n.resolve()._inputNodes, set([m.resolve()]))
         self.assertEquals(n.resolve()._outputNodes, set([]))
 
+    def test_metaclass(self):
+        def makeGraphObjectSubclass():
+            class T(graph.GraphObject):
+                def __init__(self):
+                    return
+        self.assertRaises(makeGraphObjectSubclass)
 
 if __name__ == '__main__':
     unittest.main()

@@ -303,6 +303,16 @@ class Computation(functools.partial):
     def __hash__(self):
         return hash((self.func, self.args))
 
+class GraphType(type):
+    """Used to reserve __init__ on graph objects so that we
+    can do additional parsing, set defaults, etc., from a single
+    place.
+
+    """
+    def __init__(self, className, baseClasses, attrs):
+        if className != 'GraphObject' and '__init__' in attrs:
+            raise RuntimeError("Subclasses of GraphObject are not allowed to define __init__.")
+
 class GraphObject(object):
     """All classes that provide node-enabled methods should
     inherit, directly or indirectly, from this class.  Such
@@ -312,6 +322,8 @@ class GraphObject(object):
     having to call setValue.
 
     """
+    __metaclass__ = GraphType
+
     def __setattr__(self, n, v):
         obj = getattr(self, n)
         if isinstance(obj, DeferredNode):
