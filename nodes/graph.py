@@ -329,7 +329,7 @@ class GraphEnabled(object):
         for k in dir(self):
             v = getattr(self, k)
             if isinstance(v, GraphEnabledFunction):
-                super(GraphEnabled, self).__setattr__(k, GraphEnabledMethod(k, v))
+                super(GraphEnabled, self).__setattr__(k, GraphEnabledMethod(v, self))
         for k,v in kwargs.iteritems():
             c = getattr(self, k)
             if not isinstance(c, GraphEnabledMethod):
@@ -349,6 +349,10 @@ class GraphEnabledFunction(object):
         self.function = function
         self.flags = flags
         self.argspec = inspect.getargspec(function)
+
+    @property
+    def name(self):
+        return self.function.__name__
 
     @property
     def settable(self):
@@ -397,11 +401,11 @@ class GraphEnabledMethod(object):
 
     @property
     def methodName(self):
-        return self._graphEnabledFunction.__name__
+        return self._graphEnabledFunction.name
 
     # Refactor the below, too much duplicated code.
     #
-    def args(self, args):
+    def args(self, *args):
         return (self._graphEnabledObject,) + args
 
     def resolve(self, *args):
@@ -411,10 +415,10 @@ class GraphEnabledMethod(object):
         return self._graphEnabledFunction(*self.args(*args))
 
     def setValue(self, value, *args):
-        return self._graphEnabledFunction(value, *self.args(*args))
+        return self._graphEnabledFunction.setValue(value, *self.args(*args))
 
     def unsetValue(self, *args):
-        return self._graphEnabledFunction(*self.args(*args))
+        return self._graphEnabledFunction.unsetValue(*self.args(*args))
 
 DEFAULT = Node.DEFAULT
 SETTABLE = Node.SETTABLE
