@@ -284,7 +284,7 @@ class GraphDataStore(object):
 
 # FIXME: We want the key before the computation is created,
 #        because the code here means we create a new object every
-#        time we get a deferred node's value, even if a node
+#        time we get a graph-enabled node's value, even if a node
 #        for that computation has already been created.
 #
 class Computation(functools.partial):
@@ -303,17 +303,18 @@ class Computation(functools.partial):
     def __hash__(self):
         return hash((self.func, self.args))
 
-class GraphType(type):
+class GraphEnabledType(type):
     """Used to reserve __init__ on graph objects so that we
     can do additional parsing, set defaults, etc., from a single
     place.
 
     """
-    def __init__(self, className, baseClasses, attrs):
-        if className != 'GraphObject' and '__init__' in attrs:
-            raise RuntimeError("Subclasses of GraphObject are not allowed to define __init__.")
+    def __init__(cls, className, baseClasses, attrs):
+        if className != 'GraphEnabled' and '__init__' in attrs:
+            raise RuntimeError("Subclasses of GraphEnabled are not allowed to redefine __init__.")
+        type.__init__(cls, className, baseClasses, attrs)
 
-class GraphObject(object):
+class GraphEnabled(object):
     """All classes that provide node-enabled methods should
     inherit, directly or indirectly, from this class.  Such
     inheritance may become a requirement in a future version,
@@ -322,54 +323,50 @@ class GraphObject(object):
     having to call setValue.
 
     """
-    __metaclass__ = GraphType
+    __metaclass__ = GraphEnabledType
 
     def __init__(self, **kwargs):
+        for k in dir(self):
+            v = getattr(self, k)
+            if isinstance(v, GraphEnabledFunction):
+                super(GraphEnabled, self).__setattr__(k, GraphEnabledMethod(k, v))
         for k,v in kwargs.iteritems():
-            candidate = getattr(self, k)
-            if isinstance(candidate, DeferredNode):
-                self.__setattr__(k, v)
+            c = getattr(self, k)
+            if not isinstance(c, GraphEnabledMethod):
+                raise RuntimeError("%s is not graph-enabled and cannot be set in __init__.")
+            self.__setattr__(c.methodName, v)
 
     def __setattr__(self, n, v):
-        obj = getattr(self, n)
-        if isinstance(obj, DeferredNode):
-            obj.setValue(v)
+        c = getattr(self, n)
+        if isinstance(c, GraphEnabledMethod):
+            c.setValue(v)
             return
         super(GraphEnabled, self).__setattr__(n, v)
 
-class DeferredNode(object):
-    """A deferred node allows one to wrap callables for later resolution
-    to a node when the full details needed for the resolution are not
-    available until runtime.
+class GraphEnabledFunction(object):
 
-    """
-    def __init__(self, func, flags=Node.DEFAULT):
-        self.func = func
-        self.argspec = inspect.getargspec(func)
+    def __init__(self, function, flags=Node.DEFAULT):
+        self.function = function
         self.flags = flags
-
-    def isBound(self):
-        return bool(getattr(self, 'obj', None))
-
-    def isConsistent(self, *args):
-        if self.argspec.varargs:
-            return len(args) >= self.func.func_code.co_argcount
-        else:
-            return len(args) == self.func.func_code.co_argcount
-
-    def computation(self, *args):
-        if self.isBound():
-            args = (self.obj,) + args
-        if not self.isConsistent(*args):
-            raise RuntimeError("Missing or too many arguments.")
-        return Computation(self.func, *args)
-
-    def resolve(self, *args):
-        return _graph.nodeResolve(self.computation(*args))
+        self.argspec = inspect.getargspec(function)
 
     @property
     def settable(self):
         return bool(self.flags & Node.SETTABLE)
+
+    def isConsistent(self, *args):
+        if self.argspec.varargs:
+            return len(args) >= self.function.func_code.co_argcount
+        else:
+            return len(args) == self.function.func_code.co_argcount
+
+    def computation(self, *args):
+        if not self.isConsistent(*args):
+            raise RuntimeError("Missing or too many arguments.")
+        return Computation(self.function, *args)
+
+    def resolve(self, *args):
+        return _graph.nodeResolve(self.computation(*args))
 
     def setValue(self, value, *args):
         if not self.settable:
@@ -381,37 +378,56 @@ class DeferredNode(object):
             raise RuntimeError("This node cannot be unset.")
         _graph.nodeUnsetValue(self.resolve(*args))
 
-    def __get__(self, obj, *args):
-        self.obj = obj
-        return self
-
     def __call__(self, *args):
         return _graph.nodeValue(self.resolve(*args))
+
+class GraphEnabledMethod(object):
+
+    def __init__(self, graphEnabledFunction, graphEnabledObject):
+        self._graphEnabledFunction = graphEnabledFunction
+        self._graphEnabledObject = graphEnabledObject
+
+    @property
+    def methodName(self):
+        return self._graphEnabledFunction.__name__
+
+    # Refactor the below, too much duplicated code.
+    #
+    def args(self, *args):
+        return (self._graphEnabledObject,) + args
+
+    def __call__(self, *args):
+        return self._graphEnabledFunction(self.args(*args))
+
+    def setValue(self, value, *args):
+        return self._graphEnabledFunction(value. self.args(*args))
+
+    def unsetValue(self, *args):
+        return self._graphEnabledFunction(self.args(*args))
 
 DEFAULT = Node.DEFAULT
 SETTABLE = Node.SETTABLE
 
-def deferredNode(f=None, flags=DEFAULT, *args, **kwargs):
-    """Marks a function as a (as yet unbound) deferred node for
-    the graph.
+def graphEnabled(f=None, flags=DEFAULT, *args, **kwargs):
+    """Places a function on the graph.
 
-    A deferred node becomes a real node when the underlying
-    computation (the decorated function) is called with a
-    particular set of argument values.
+    A graph-enabled function is resolved to a node on the
+    graph when the computation is called.
 
     Users can decorate functions in two ways:
-        @node(*args, **kwargs)      Allowing for decorator options.
-        @node                       Shortcut for @node()
+        @graphEnabled(*args, **kwargs)      Allowing for decorator options.
+        @graphEnabled                       Shortcut for @graphEnabled()
 
-    deferredNode can be applied to stand-alone functions or
-    those that will be later bound to an instance, and gracefully
-    handles both cases.
+    Any regular function can be enabled.  If a function is
+    a member of a class, that class must inherit from the GraphEnabled
+    class; when an object of that class is instantiated, the graph-enabled
+    function is bound to the object as a graph-enabled method.
 
     """
     if not callable(f):
         def wrapper(g):
-            return deferredNode(g, f)
+            return graphEnabled(g, f)
         return wrapper
-    return DeferredNode(f, flags=flags)
+    return GraphEnabledFunction(f, flags=flags)
 
 _graph = Graph()        # We need somewhere to start.
