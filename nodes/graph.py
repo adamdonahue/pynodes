@@ -401,17 +401,20 @@ class GraphEnabledMethod(object):
 
     # Refactor the below, too much duplicated code.
     #
-    def args(self, *args):
+    def args(self, args):
         return (self._graphEnabledObject,) + args
 
+    def resolve(self, *args):
+        return self.graphEnabledFunction.resolve(*self.args(*args))
+
     def __call__(self, *args):
-        return self._graphEnabledFunction(self.args(*args))
+        return self._graphEnabledFunction(*self.args(*args))
 
     def setValue(self, value, *args):
-        return self._graphEnabledFunction(value. self.args(*args))
+        return self._graphEnabledFunction(value, *self.args(*args))
 
     def unsetValue(self, *args):
-        return self._graphEnabledFunction(self.args(*args))
+        return self._graphEnabledFunction(*self.args(*args))
 
 DEFAULT = Node.DEFAULT
 SETTABLE = Node.SETTABLE
