@@ -388,6 +388,14 @@ class GraphEnabledMethod(object):
         self._graphEnabledObject = graphEnabledObject
 
     @property
+    def graphEnabledFunction(self):
+        return self._graphEnabledFunction
+
+    @property
+    def graphEnabledObject(self):
+        return self._graphEnabledObject
+
+    @property
     def methodName(self):
         return self._graphEnabledFunction.__name__
 
