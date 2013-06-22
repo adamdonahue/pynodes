@@ -29,15 +29,15 @@ class GraphTestCase(unittest.TestCase):
         self.assertIsInstance(T.g, graph.GraphEnabledFunction)
         self.assertIsInstance(T.h, graph.GraphEnabledFunction)
         self.assertIsInstance(T.i, graph.GraphEnabledFunction)
-        self.assertIsNotInstance(T.o, graph.GraphEnabledFunction)
+        self.assertNotIsInstance(T.o, graph.GraphEnabledFunction)
 
         t = T()
 
-        self.assertIsInstance(T.f, graph.GraphEnabledMethod)
-        self.assertIsInstance(T.g, graph.GraphEnabledMethod)
-        self.assertIsInstance(T.h, graph.GraphEnabledMethod)
-        self.assertIsInstance(T.i, graph.GraphEnabledMethod)
-        self.assertIsNotInstance(T.o, graph.GraphEnabledMethod)
+        self.assertIsInstance(t.f, graph.GraphEnabledMethod)
+        self.assertIsInstance(t.g, graph.GraphEnabledMethod)
+        self.assertIsInstance(t.h, graph.GraphEnabledMethod)
+        self.assertIsInstance(t.i, graph.GraphEnabledMethod)
+        self.assertNotIsInstance(t.o, graph.GraphEnabledMethod)
 
 
     def test_simpleCalc(self):
