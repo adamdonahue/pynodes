@@ -3,44 +3,50 @@ import unittest
 
 class GraphTestCase(unittest.TestCase):
 
-    def test_deferredNode(self):
-        class T(graph.GraphObject): 
-            @graph.deferredNode
+    def test_graphEnabled(self):
+        class T(graph.GraphEnabled):
+            @graph.graphEnabled
             def f(self):
                 return True
 
-            @graph.deferredNode()
+            @graph.graphEnabled()
             def g(self):
                 return False
 
-            @graph.deferredNode(graph.SETTABLE)
+            @graph.graphEnabled(graph.SETTABLE)
             def h(self):
                 return None
 
-            @graph.deferredNode
+            @graph.graphEnabled
             def i(self):
                 if self.f():
                     return 'Yes'
 
-        self.assertIsInstance(T.f, graph.DeferredNode)
+            def o(self):
+                return
 
-        self.assertFalse(T.f.isBound())
-        self.assertFalse(T.g.isBound())
-        self.assertFalse(T.h.isBound())
+        self.assertIsInstance(T.f, graph.GraphEnabledFunction)
+        self.assertIsInstance(T.g, graph.GraphEnabledFunction)
+        self.assertIsInstance(T.h, graph.GraphEnabledFunction)
+        self.assertIsInstance(T.i, graph.GraphEnabledFunction)
+        self.assertIsNotInstance(T.o, graph.GraphEnabledFunction)
 
         t = T()
 
-        self.assertTrue(t.f.isBound())
-        self.assertTrue(t.g.isBound())
-        self.assertTrue(t.h.isBound())
+        self.assertIsInstance(T.f, graph.GraphEnabledMethod)
+        self.assertIsInstance(T.g, graph.GraphEnabledMethod)
+        self.assertIsInstance(T.h, graph.GraphEnabledMethod)
+        self.assertIsInstance(T.i, graph.GraphEnabledMethod)
+        self.assertIsNotInstance(T.o, graph.GraphEnabledMethod)
+
 
     def test_simpleCalc(self):
-        class SimpleCalc(graph.GraphObject):
-            @graph.deferredNode
+        class SimpleCalc(graph.GraphEnabled):
+            @graph.graphEnabled
             def f(self):
                 return 'f'
 
-            @graph.deferredNode
+            @graph.graphEnabled
             def g(self):
                 return '%sg' % self.f()
 
@@ -54,16 +60,16 @@ class GraphTestCase(unittest.TestCase):
         self.assertEquals(simpleCalc.h(), 'fh')
 
     def test_simpleSet(self):
-        class SimpleSet(graph.GraphObject):
-            @graph.deferredNode
+        class SimpleSet(graph.GraphEnabled):
+            @graph.graphEnabled
             def f(self):
                 return 'f' + self.g()
 
-            @graph.deferredNode(graph.SETTABLE)
+            @graph.graphEnabled(graph.SETTABLE)
             def g(self):
                 return 'g' + self.h()
 
-            @graph.deferredNode(graph.SETTABLE)
+            @graph.graphEnabled(graph.SETTABLE)
             def h(self):
                 return 'h'
 
@@ -138,16 +144,16 @@ class GraphTestCase(unittest.TestCase):
         self.assertEquals(s.h(), 'h')
 
     def test_args_consistency(self):
-        class ArgsConsistency(graph.GraphObject):
-            @graph.deferredNode
+        class ArgsConsistency(graph.GraphEnabled):
+            @graph.graphEnabled
             def f(self):
                 return
 
-            @graph.deferredNode
+            @graph.graphEnabled
             def g(self, x):
                 return
 
-            @graph.deferredNode
+            @graph.graphEnabled
             def h(self, x, y, *args):
                 return
 
@@ -165,35 +171,35 @@ class GraphTestCase(unittest.TestCase):
         ac.h(*[None,None,None])
 
     def test_dependencies(self):
-        class Dependencies(graph.GraphObject):
-            @graph.deferredNode
+        class Dependencies(graph.GraphEnabled):
+            @graph.graphEnabled
             def f(self):
                 return 'f' + self.g() + m()
 
-            @graph.deferredNode
+            @graph.graphEnabled
             def g(self):
                 return 'g' + self.h()
 
             def h(self):
                 return 'h' + self.i()
 
-            @graph.deferredNode
+            @graph.graphEnabled
             def i(self):
                 return 'i' + self.j() + self.k()
 
-            @graph.deferredNode
+            @graph.graphEnabled
             def j(self):
                 return 'j'
 
-            @graph.deferredNode
+            @graph.graphEnabled
             def k(self):
                 return 'k'
 
-        @graph.deferredNode
+        @graph.graphEnabled
         def m():
             return 'm'
 
-        @graph.deferredNode
+        @graph.graphEnabled
         def n():
             return m()
 
@@ -321,19 +327,19 @@ class GraphTestCase(unittest.TestCase):
         self.assertEquals(n.resolve()._outputNodes, set([]))
 
     def test_metaclass(self):
-        def makeGraphObjectSubclass():
-            class T(graph.GraphObject):
+        def makeGraphEnabledSubclass():
+            class T(graph.GraphEnabled):
                 def __init__(self):
                     return
-        self.assertRaises(makeGraphObjectSubclass)
+        self.assertRaises(makeGraphEnabledSubclass)
 
     def test_init(self):
-        class InitTest(graph.GraphObject):
-            @graph.deferredNode(graph.SETTABLE)
+        class InitTest(graph.GraphEnabled):
+            @graph.graphEnabled(graph.SETTABLE)
             def f(self):
                 return None
 
-            @graph.deferredNode(graph.SETTABLE)
+            @graph.graphEnabled(graph.SETTABLE)
             def g(self):
                 return None
 
