@@ -50,21 +50,27 @@ class Node(NodeBase):
     computation, which can be bypassed by a setting a node
     value specifically (where the node has that option).
 
-    A computation is a Python callable that accepts no
-    arguments.  (This doesn't mean you can't compute
-    a function with arguments; it just means you need to
-    bind the arguments first, using, say, functools.partial,
-    before you initialize the node.)
+    A computation is a Python GraphEnabledFunction or
+    GraphEnabledObject along with zero or more arguments.
 
     """
 
-    def __init__(self, graph, key=None, computation=None, flags=NodeBase.DEFAULT):
+    def __init__(self, graph, key, graphEnabledFunction=None, args=(), flags=NodeBase.DEFAULT):
         super(Node, self).__init__(graph, key, flags=flags)
-        self._computation = computation
+        self._graphEnabledFunction = graphEnabledFunction
+        self._args = args
 
     @property
-    def computation(self):
-        return self._computation
+    def graphEnabledFunction(self):
+        return self._graphEnabledFunction
+
+    @property
+    def function(self):
+        return self.graphEnabledFunction.function
+
+    @property
+    def args(self):
+        return self._args
 
     def data(self):
         return self.graph.nodeData(self)
@@ -73,7 +79,7 @@ class Node(NodeBase):
         return self.graph.nodeValue(self)
 
     def compute(self):
-        return self.graph.nodeCompute(self)
+        return self.graphEnabledFunction.function(*self.args)
 
     def fixed(self):
         return self.data().fixed
@@ -142,16 +148,17 @@ class Graph(object):
     def dataStore(self):
         return self._dataStore
 
-    def nodeKey(self, computation):
+    def nodeKey(self, graphEnabledFunction, args=()):
         """Returns a key for the node given its underlying computation.
 
         At the moment this computation is what distinctly identifies
         a node in the graph.
 
         """
-        return hash(computation)
+        key = (graphEnabledFunction,) + args
+        return key
 
-    def nodeResolve(self, computation, createIfMissing=True):
+    def nodeResolve(self, graphEnabledFunction, args=(), createIfMissing=True):
         """Given a computation, attempts to find the node in
         the graph.
 
@@ -159,13 +166,13 @@ class Graph(object):
         a new node is created and added to the graph.
 
         """
-        key = self.nodeKey(computation)
+        key = self.nodeKey(graphEnabledFunction, args=args)
         node = self._nodesByKey.get(key)
         if not node and createIfMissing:
-            node = self.nodeCreate(key, computation)
+            node = self.nodeCreate(key, graphEnabledFunction=graphEnabledFunction, args=args)
         return node
 
-    def nodeCreate(self, key, computation):
+    def nodeCreate(self, key, graphEnabledFunction=None, args=()):
         """Creates a new node, identified by key, based on the
         specified computation, and adds it to the graph.
 
@@ -176,7 +183,7 @@ class Graph(object):
         """
         if key in self._nodesByKey:
             raise RuntimeError("The node with key %s already exists in this graph.")
-        node = self._nodesByKey[key] = Node(self, key, computation)
+        node = self._nodesByKey[key] = Node(self, key, graphEnabledFunction=graphEnabledFunction, args=args)
         return node
 
     def nodeDelete(self, node):
@@ -185,6 +192,9 @@ class Graph(object):
 
         """
         raise NotImplementedError("Not yet implemented, nor clear that we should.")
+
+    def nodeCompute(self, node):
+        return node.compute()
 
     def nodeData(self, node, createIfMissing=True):
         """Returns any node data for the object, if it exists.
@@ -221,7 +231,7 @@ class Graph(object):
         try:
             savedParentNode = self._state._activeParentNode
             self._state._activeParentNode = node
-            nodeData._value = node.computation()
+            nodeData._value = self.nodeCompute(node)
             nodeData._flags |= nodeData.VALID
         finally:
             self._state._activeParentNode = savedParentNode
@@ -281,27 +291,6 @@ class GraphDataStore(object):
         if node.key not in self._nodeDataByNodeKey and createIfMissing:
             self._nodeDataByNodeKey[node.key] = NodeData(node, self)
         return self._nodeDataByNodeKey.get(node.key)
-
-# FIXME: We want the key before the computation is created,
-#        because the code here means we create a new object every
-#        time we get a graph-enabled node's value, even if a node
-#        for that computation has already been created.
-#
-class Computation(functools.partial):
-    """Represents a node computation.
-
-    This is essentially a functools.partial with an overriden
-    __hash__ function so that a given function and set of
-    arguments returns the same hash value.
-
-    """
-    def __init__(self, func, *args, **kwargs):
-        if kwargs:
-            raise RuntimeError("The graph does not yet support keyword arguments.")
-        super(Computation, self).__init__(self, *args)
-
-    def __hash__(self):
-        return hash((self.func, self.args))
 
 class GraphEnabledType(type):
     """Used to reserve __init__ on graph objects so that we
@@ -364,32 +353,37 @@ class GraphEnabledFunction(object):
         else:
             return len(args) == self.function.func_code.co_argcount
 
-    def computation(self, *args):
-        if not self.isConsistent(*args):
-            raise RuntimeError("Missing or too many arguments.")
-        return Computation(self.function, *args)
-
     def resolve(self, *args):
-        return _graph.nodeResolve(self.computation(*args))
+        return _graph.nodeResolve(self, args=args)
 
     def setValue(self, value, *args):
         if not self.settable:
             raise RuntimeError("This node cannot be set.")
-        _graph.nodeSetValue(self.resolve(*args), value)
+        node = self.resolve(*args)
+        _graph.nodeSetValue(node, value)
 
     def unsetValue(self, *args):
         if not self.settable:
             raise RuntimeError("This node cannot be unset.")
-        _graph.nodeUnsetValue(self.resolve(*args))
+        node = self.resolve(*args)
+        _graph.nodeUnsetValue(node)
+
+    def getValue(self, *args):
+        node = self.resolve(*args)
+        return _graph.nodeValue(node)
 
     def __call__(self, *args):
-        return _graph.nodeValue(self.resolve(*args))
+        return self.getValue(*args)
 
 class GraphEnabledMethod(object):
 
     def __init__(self, graphEnabledFunction, graphEnabledObject):
         self._graphEnabledFunction = graphEnabledFunction
         self._graphEnabledObject = graphEnabledObject
+
+    @property
+    def function(self):
+        return self.graphEnabledFunction.function
 
     @property
     def graphEnabledFunction(self):
@@ -412,6 +406,9 @@ class GraphEnabledMethod(object):
         return self.graphEnabledFunction.resolve(*self.args(*args))
 
     def __call__(self, *args):
+        return self.getValue(*args)
+
+    def getValue(self, *args):
         return self._graphEnabledFunction(*self.args(*args))
 
     def setValue(self, value, *args):

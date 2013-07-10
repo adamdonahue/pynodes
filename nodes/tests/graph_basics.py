@@ -39,7 +39,6 @@ class GraphTestCase(unittest.TestCase):
         self.assertIsInstance(t.i, graph.GraphEnabledMethod)
         self.assertNotIsInstance(t.o, graph.GraphEnabledMethod)
 
-
     def test_simpleCalc(self):
         class SimpleCalc(graph.GraphEnabled):
             @graph.graphEnabled
@@ -359,6 +358,17 @@ class GraphTestCase(unittest.TestCase):
         i.g.unsetValue()
         self.assertIsNone(i.f())
         self.assertIsNone(i.g())
+
+    def x_test_DictArgs(self):
+        class DictArgs(graph.GraphEnabled):
+
+            @graph.graphEnabled
+            def fnWithDictArgs(self, arg):
+                return arg
+
+        da = DictArgs()
+        da.fnWithDictArgs({})
+
 
 if __name__ == '__main__':
     unittest.main()
