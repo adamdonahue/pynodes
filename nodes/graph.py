@@ -311,6 +311,19 @@ class GraphLayeredDataStore(GraphDataStore):
     def parentDataStore(self):
         return self._parentDataStore
 
+    def __enter__(self):
+        """Activates the data store.
+
+        """
+        raise NotImplementedError()
+
+
+    def __exit__(self, *err):
+        """Deactivates the data store.
+
+        """
+        raise NotImplementedError()
+
 def dataStore(parentDataStore=None):
     """Creates a new data store and returns it.
 
