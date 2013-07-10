@@ -134,19 +134,21 @@ class GraphState(object):
     def __init__(self, graph):
         self._graph = graph
         self._activeParentNode = None
+        self._activeDataStore = None
 
 class Graph(object):
 
     def __init__(self, dataStoreClass=None, stateClass=None):
         self._dataStoreClass = dataStoreClass or GraphDataStore
-        self._dataStore = self._dataStoreClass(self)
+        self._rootDataStore = self._dataStoreClass(self)
         self._stateClass = stateClass or GraphState
         self._state = self._stateClass(self)
+        self._state._activeDataStore = self._rootDataStore
         self._nodesByKey = {}
 
     @property
     def dataStore(self):
-        return self._dataStore
+        return self._state._activeDataStore
 
     def nodeKey(self, graphEnabledFunction, args=()):
         """Returns a key for the node given its underlying computation.
@@ -207,6 +209,10 @@ class Graph(object):
         return self.dataStore.nodeData(node, createIfMissing=createIfMissing)
 
     def nodeAddDependency(self, node, dependency):
+        """Adds the dependency as an input to the node, and the node
+        as an output of the dependency.
+
+        """
         node._inputNodes.add(dependency)
         dependency._outputNodes.add(node)
 
@@ -291,6 +297,26 @@ class GraphDataStore(object):
         if node.key not in self._nodeDataByNodeKey and createIfMissing:
             self._nodeDataByNodeKey[node.key] = NodeData(node, self)
         return self._nodeDataByNodeKey.get(node.key)
+
+class GraphLayeredDataStore(GraphDataStore):
+    """A data store that can exist as part of a tree of
+    other data stores.
+
+    """
+    def __init__(self, graph, parentDataStore=None):
+        super(GraphLayeredDataStore, self).__init__(graph)
+        self._parentDataStore = parentDataStore
+
+    @property
+    def parentDataStore(self):
+        return self._parentDataStore
+
+def dataStore(parentDataStore=None):
+    """Creates a new data store and returns it.
+
+    """
+    parentDataStore = parentDataStore or _graph.dataStore
+    return GraphLayeredDataStore(_graph, parentDataStore)
 
 class GraphEnabledType(type):
     """Used to reserve __init__ on graph objects so that we
