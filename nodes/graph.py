@@ -372,7 +372,9 @@ class GraphEnabled(object):
         super(GraphEnabled, self).__setattr__(n, v)
 
 class GraphEnabledFunction(object):
+    """A function that has been lifted to exist on the graph.
 
+    """
     def __init__(self, function, flags=Node.DEFAULT):
         self.function = function
         self.flags = flags
