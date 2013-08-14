@@ -144,6 +144,12 @@ class Node(object):
     def flags(self):
         return self._flags
 
+    def valid(self, dataStore=None):
+        return self._graph.nodeData(self, dataStore=dataStore).valid
+
+    def fixed(self, dataStore=None):
+        return self._graph.nodeData(self, dataStore=dataStore).fixed
+
     def value(self, dataStore=None):
         return self._graph.nodeValue(self, dataStore=dataStore)
 
