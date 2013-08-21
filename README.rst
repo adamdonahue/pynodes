@@ -8,6 +8,9 @@ business-critical software on the Web and on native platforms.
 
 Synopsis
 --------
+
+.. code:: python
+
     import pynodes
     
     class Person(pynodes.GraphEnabled):
@@ -40,8 +43,8 @@ Synopsis
     
     person.write('/Persons/' + person.Name())
     
-    ...
-        
+    # More to come.
+    
         
 
 Components
