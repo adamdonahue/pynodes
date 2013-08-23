@@ -4,12 +4,13 @@ import inspect
 class NodeDescriptor(object):
     # TODO: Get rid of object, do this elsewhere.
 
-    DEFAULT      = 0x0000
-    SETTABLE     = 0x0001
-    SERIALIZABLE = 0x0002
+    READONLY     = 0x0000
+    OVERLAYABLE  = 0x0001
+    SETTABLE     = 0x0003
+    SERIALIZABLE = 0x0004
     STORED       = SETTABLE|SERIALIZABLE
 
-    def __init__(self, function, flags=DEFAULT):
+    def __init__(self, function, flags=READONLY):
         self._function = function
         self._flags = flags
 
@@ -26,16 +27,20 @@ class NodeDescriptor(object):
         return self._flags
 
     @property
+    def overlayable(self):
+        return self.flags & self.OVERLAYABLE == self.OVERLAYABLE
+
+    @property
     def settable(self):
-        return bool(self.flags & self.SETTABLE)
+        return self.flags & self.SETTABLE == self.SETTABLE
 
     @property
     def serializable(self):
-        return bool(self.flags & self.SERIALIZABLE)
+        return self.flags & self.SERIALIZABLE == self.SERIALIZABLE
 
     @property
     def stored(self):
-        return (self.flags & self.STORED) == self.STORED
+        return self.flags & self.STORED == self.STORED
 
 class NodeDescriptorBound(object):
 
@@ -87,8 +92,14 @@ class NodeDescriptorBound(object):
     def setValue(self, value, *args):
         _graph.nodeSetValue(self.node(args=args), value)
 
-    def unsetValue(self, *args):
-        _graph.nodeUnsetValue(self.node(args=args))
+    def clearValue(self, *args):
+        _graph.nodeClearValue(self.node(args=args))
+
+    def setWhatIf(self, value, *args):
+        _graph.nodeSetWhatIf(self.node(args=args), value)
+
+    def clearWhatIf(self, *args):
+        _graph.nodeClearWhatIf(self.node(args=args))
 
 class Node(object):
     NONE  = 0x0000
@@ -325,16 +336,28 @@ class Graph(object):
         nodeData._flags |= (nodeData.FIXED|nodeData.VALID)
         self.nodeInvalidateOutputs(node, dataStore=dataStore)
 
-    def nodeUnsetValue(self, node, dataStore=None):
+    def nodeClearValue(self, node, dataStore=None):
         if not node.settable:
             raise RuntimeError("This is not a settable node.")
         dataStore = dataStore or self.activeDataStore
         nodeData = self.nodeData(node, dataStore=dataStore)
         if not nodeData.fixed:
-            raise RuntimeError("You cannot unset a value that hasn't been set.")
+            raise RuntimeError("You cannot clear a value that hasn't been set.")
         del nodeData._value
         nodeData._flags &= ~(nodeData.FIXED|nodeData.VALID)
         self.nodeInvalidateOutputs(node, dataStore=dataStore)
+
+    def nodeSetWhatIf(self, node, value, dataStore=None):
+        if not node.overlayable:
+            raise RuntimeError("This is not a what-if enabled node.")
+        dataStore = dataStore or self.activeDataStore
+        raise NotImplementedError("What-ifs are not yet supported.")
+
+    def nodeClearWhatIf(self, node, dataStore=None):
+        if not node.overlayable:
+            raise RuntimeError("This is not a what-if enabled node.")
+        dataStore = dataStore or self.activeDataStore
+        raise NotImplementedError("What-ifs are not yet supported.")
 
     def nodeInvalidateOutputs(self, node, dataStore=None):
         dataStore = dataStore or self.activeDataStore

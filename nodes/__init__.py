@@ -4,7 +4,7 @@ import types
 
 from graph import *
 
-Default      = NodeDescriptor.DEFAULT
+ReadOnly     = NodeDescriptor.READONLY
 Settable     = NodeDescriptor.SETTABLE
 Serializable = NodeDescriptor.SERIALIZABLE
 Stored       = NodeDescriptor.STORED
@@ -64,30 +64,16 @@ class GraphEnabled(object):
             return
         super(GraphEnabled, self).__setattr__(n, v)
 
-    def __getstate__(self):
-        raise NotImplementedError()
-        # --
-        state = {}
-        storedGraphMethodNames = [f.name for f in self._storedGraphMethodDescriptors]
-        for k,v in self.__dict__.iteritems():
-            if isinstance(v, GraphMethod) and v.stored:
-                state[k] = v.node().value()
-            elif not isinstance(v, GraphMethod):
-                state[k] = v
-        return state
-
-    def __setstate__(self, state):
-        raise NotImplementedError()
-        # --
-        self.__init__(**state)
-
-def graphMethod(f=0, flags=Default, *args, **kwargs):
+def graphMethod(f=0, flags=ReadOnly, *args, **kwargs):
     """Declares a on-graph method, potentially persisted
     to an underlying datastore.
 
     """
     if not isinstance(f, types.FunctionType):
         def wrapper(g):
-            return graphMethod(g, flags=f, *args, **kwargs)
+            return graphMethod(g, f, *args, **kwargs)
         return wrapper
     return GraphMethodDescriptor(f, flags=flags)
+
+def scenario(parentScenario=None):
+    raise NotImplementedError("Scenarios are not yet supported.")
