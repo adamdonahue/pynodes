@@ -1,3 +1,12 @@
+"""PyNodes graph."""
+
+__author__ = "Adam M. Donahue (adam.donahue@gmail.com)"
+__copyright__ = "Copyright 2013, Adam M. Donahue"
+__version__ = "0.0.1"
+__maintainer__ = "Adam Donahue"
+__contact__ = "adam.donahue@gmail.com"
+__status__ = "Alpha"
+
 import functools
 import inspect
 

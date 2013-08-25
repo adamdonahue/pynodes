@@ -1,3 +1,10 @@
+__author__ = "Adam M. Donahue (adam.donahue@gmail.com)"
+__copyright__ = "Copyright 2013, Adam M. Donahue"
+__version__ = "0.0.1"
+__maintainer__ = "Adam Donahue"
+__contact__ = "adam.donahue@gmail.com"
+__status__ = "Alpha"
+
 import functools
 import inspect
 import types
@@ -78,4 +85,8 @@ def graphMethod(f=0, flags=ReadOnly, *args, **kwargs):
     return GraphMethodDescriptor(f, flags=flags)
 
 def scenario(parentScenario=None):
+    """Creates a new scenario, collecting values to overlay
+    when the scenario is applied.
+
+    """
     raise NotImplementedError("Scenarios are not yet supported.")
