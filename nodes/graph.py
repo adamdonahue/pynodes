@@ -230,6 +230,10 @@ class Graph(object):
     def activeDataStore(self):
         return self._state._activeDataStore
 
+    @activeDataStore.setter
+    def activeDataStore(self, dataStore):
+        self._state._activeDataStore = dataStore
+
     def nodeKey(self, descriptor, args=()):
         """Returns a key for the node given computation details.
 
@@ -375,8 +379,15 @@ class Graph(object):
         return
 
 class GraphDataStore(object):
-    def __init__(self, graph):
+    nextID = 0
+
+    def __init__(self, graph, parentDataStore=None):
+        self._id = GraphDataStore.nextID
+        GraphDataStore.nextID += 1
         self._graph = graph
+        self._parentDataStore = parentDataStore
+
+        # TODO: Assert that the parent data store refers to the same graph.
         self._nodeDataByNodeKey = {}
 
     @property
@@ -391,5 +402,16 @@ class GraphDataStore(object):
         if node.key not in self._nodeDataByNodeKey and createIfMissing:
             self._nodeDataByNodeKey[node.key] = NodeData(node, self)
         return self._nodeDataByNodeKey.get(node.key)
+
+    def __enter__(self):
+        self.prevDataStore, self.graph.activeDataStore = self.graph.activeDataStore, self
+        return self
+
+    def __exit__(self, *args):
+        self.graph.activeDataStore = self.prevDataStore
+
+def graphDataStore(parentDataStore=None):
+    parentDataStore = parentDataStore or _graph.activeDataStore
+    return GraphDataStore(_graph, _graph.activeDataStore)
 
 _graph = Graph()        # We need somewhere to start.
