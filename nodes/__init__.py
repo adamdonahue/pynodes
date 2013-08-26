@@ -83,10 +83,3 @@ def graphMethod(f=0, flags=ReadOnly, *args, **kwargs):
             return graphMethod(g, f, *args, **kwargs)
         return wrapper
     return GraphMethodDescriptor(f, flags=flags)
-
-def scenario(parentScenario=None):
-    """Creates a new scenario, collecting values to overlay
-    when the scenario is applied.
-
-    """
-    raise NotImplementedError("Scenarios are not yet supported.")

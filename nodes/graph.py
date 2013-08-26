@@ -66,12 +66,24 @@ class NodeDescriptorBound(object):
         return self._descriptor
 
     @property
+    def typename(self):
+        return self.obj.__class__.__name__
+
+    @property
+    def name(self):
+        return self.descriptor.name
+
+    @property
     def flags(self):
         return self.descriptor.flags
 
     @property
     def settable(self):
         return self.descriptor.settable
+
+    @property
+    def overlayable(self):
+        return self.descriptor.overlayable
 
     @property
     def serializable(self):
@@ -98,11 +110,14 @@ class NodeDescriptorBound(object):
     def __call__(self, *args):
         return _graph.nodeValue(self.node(args=args))
 
+    # TODO:  The difference between sets and whatIfs is, at the
+    #        moment, rather artifical.  Sets go to the root
+    #        data store; other values go to child data stores.
     def setValue(self, value, *args):
-        _graph.nodeSetValue(self.node(args=args), value)
+        _graph.nodeSetValue(self.node(args=args), value, dataStore=_graph.rootDataStore)
 
     def clearValue(self, *args):
-        _graph.nodeClearValue(self.node(args=args))
+        _graph.nodeClearValue(self.node(args=args), dataStore=_graph.rootDataStore)
 
     def setWhatIf(self, value, *args):
         _graph.nodeSetWhatIf(self.node(args=args), value)
@@ -111,11 +126,8 @@ class NodeDescriptorBound(object):
         _graph.nodeClearWhatIf(self.node(args=args))
 
 class Node(object):
-    NONE  = 0x0000
-    VALID = 0x0001
-    SET   = 0x0002
 
-    def __init__(self, graph, key, descriptor, args=(), flags=NONE):
+    def __init__(self, graph, key, descriptor, args=(), flags=0):
         self._graph = graph
         self._key = key
         self._descriptor = descriptor
@@ -137,8 +149,16 @@ class Node(object):
         return self._descriptor
 
     @property
+    def name(self):
+        return self.descriptor.name
+
+    @property
     def obj(self):
         return self.descriptor.obj
+
+    @property
+    def typename(self):
+        return self.descriptor.typename
 
     @property
     def method(self):
@@ -147,6 +167,10 @@ class Node(object):
     @property
     def settable(self):
         return self.descriptor.settable
+
+    @property
+    def overlayable(self):
+        return self.descriptor.overlayable
 
     @property
     def serializable(self):
@@ -210,6 +234,14 @@ class NodeData(object):
     def fixed(self):
         return bool(self.flags & self.FIXED)
 
+    def _prettyFlags(self):
+        if self.flags == self.NONE:
+            return '(none)'
+        if self.fixed:
+            return 'FIXED|VALID'
+        if self.valid:
+            return 'VALID'
+
 class GraphState(object):
     """Collects run-time state for a graph.  At the moment
     this means keeping track of which node is being
@@ -220,7 +252,7 @@ class GraphState(object):
     def __init__(self, graph):
         self._graph = graph
         self._activeParentNode = None
-        self._activeDataStore = None
+        self._activeDataStoreStack = None
 
 class Graph(object):
 
@@ -228,20 +260,32 @@ class Graph(object):
         self._dataStoreClass = dataStoreClass or GraphDataStore
         self._rootDataStore = self._dataStoreClass(self)
         self._nodesByKey = {}
-
         self._stateClass = stateClass or GraphState
-
         self._state = self._stateClass(self)
-        self._state._activeDataStore = self._rootDataStore
+        self._state._activeDataStoreStack = [self._rootDataStore]
         self._state._nodesByKey = {}
 
     @property
     def activeDataStore(self):
-        return self._state._activeDataStore
+        return self._state._activeDataStoreStack[-1]
 
-    @activeDataStore.setter
-    def activeDataStore(self, dataStore):
-        self._state._activeDataStore = dataStore
+    @property
+    def activeDataStores(self):
+        return self._state._activeDataStoreStack
+
+    @property
+    def rootDataStore(self):
+        return self._state._activeDataStoreStack[0]
+
+    def activeDataStorePush(self, dataStore):
+        parentDataStore = self.activeDataStore
+        self._state._activeDataStoreStack.append(dataStore)
+        return parentDataStore
+
+    def activeDataStorePop(self):
+        if self.activeDataStore == self.rootDataStore:
+            raise RuntimeError("You cannot exit the root data store.")
+        return self._state._activeDataStoreStack.pop()
 
     def nodeKey(self, descriptor, args=()):
         """Returns a key for the node given computation details.
@@ -299,16 +343,14 @@ class Graph(object):
     # The functions below work on node data.
     #
 
-    def nodeData(self, node, dataStore=None, createIfMissing=True):
-        """Returns any node data for the object, if it exists.
-
-        If it doesn't exist and createIfMissing is True,
-        a new NodeData object for the node is created in the
-        data store and then returned.
+    def nodeData(self, node, dataStore=None, createIfMissing=True, searchParent=True):
+        """Returns the NodeData object associated with the specified
+        data store (or any of its ancestors, if searchParent is True),
+        or creates it in the data store if createIfMissing is True.
 
         """
         dataStore = dataStore or self.activeDataStore
-        return dataStore.nodeData(node, createIfMissing=createIfMissing)
+        return dataStore.nodeData(node, createIfMissing=createIfMissing, searchParent=searchParent)
 
     def nodeValue(self, node, dataStore=None, computeInvalid=True):
         """Returns a value for the given node, recomputing if necessary.
@@ -342,85 +384,236 @@ class Graph(object):
         if not node.settable:
             raise RuntimeError("This is not a settable node.")
         dataStore = dataStore or self.activeDataStore
-        nodeData = self.nodeData(node, dataStore=dataStore)
+        # Don't search the parent.  We want only to modify 
+        # the specified data store.
+        nodeData = self.nodeData(node, dataStore=dataStore, searchParent=False)
         if nodeData.fixed and nodeData.value == value:
             return
         nodeData._value = value
         nodeData._flags |= (nodeData.FIXED|nodeData.VALID)
-        self.nodeInvalidateOutputs(node, dataStore=dataStore)
+        # We want to invalidate outputs in this data store
+        # only, otherwise we will invalidate nodes in 
+        # a higher-level data store that are still valid
+        # once this data store is exited.
+        #
+        # We create the node data if missing because on a
+        # set we want to make sure we always have an 
+        # invalidated node at the currently active
+        # data store, otherwise we end up with the wrong
+        # state in the parent.  Effectively, we want to 
+        # revert to the parent's node data state once
+        # we've exited the currently active data store.
+        self.nodeInvalidateOutputs(node, dataStore=dataStore, createIfMissing=True)
 
     def nodeClearValue(self, node, dataStore=None):
         if not node.settable:
             raise RuntimeError("This is not a settable node.")
         dataStore = dataStore or self.activeDataStore
-        nodeData = self.nodeData(node, dataStore=dataStore)
-        if not nodeData.fixed:
+        nodeData = self.nodeData(node, dataStore=dataStore, createIfMissing=False, searchParent=False)
+        if not nodeData or not nodeData.fixed:
             raise RuntimeError("You cannot clear a value that hasn't been set.")
-        del nodeData._value
-        nodeData._flags &= ~(nodeData.FIXED|nodeData.VALID)
-        self.nodeInvalidateOutputs(node, dataStore=dataStore)
+        if nodeData:
+            # TODO: Except for root data store?  Or should we keep the data and
+            #       set a new flag?
+            dataStore.nodeDataDelete(node)
+            self.nodeInvalidateOutputs(node, dataStore=dataStore)
 
     def nodeSetWhatIf(self, node, value, dataStore=None):
         if not node.overlayable:
             raise RuntimeError("This is not a what-if enabled node.")
         dataStore = dataStore or self.activeDataStore
-        raise NotImplementedError("What-ifs are not yet supported.")
+        if dataStore == self.rootDataStore:
+            raise RuntimeError("You cannot use what-ifs outside of a scenario.")
+        self.nodeSetValue(node, value, dataStore=dataStore)
 
     def nodeClearWhatIf(self, node, dataStore=None):
         if not node.overlayable:
             raise RuntimeError("This is not a what-if enabled node.")
         dataStore = dataStore or self.activeDataStore
-        raise NotImplementedError("What-ifs are not yet supported.")
+        if dataStore == self.rootDataStore:
+            raise RuntimeError("You cannot use what-ifs outside of a scenario.")
+        self.nodeClearValue(node, dataStore=dataStore)
 
-    def nodeInvalidateOutputs(self, node, dataStore=None):
+    def nodeInvalidateOutputs(self, node, dataStore=None, createIfMissing=False):
+        """Invalidate output nodes in the specified data
+        store, but copy nodes found in a higher-level
+        data store to this one first
+
+        """
         dataStore = dataStore or self.activeDataStore
         outputs = list(node._outputNodes)
         while outputs:
             output = outputs.pop()
-            outputData = self.nodeData(output, dataStore=dataStore, createIfMissing=False)
-            if not outputData:
+            outputData = self.nodeData(output, dataStore=dataStore, createIfMissing=createIfMissing, searchParent=False)
+            # If the node data is not present we can skip invalidation;
+            # createIfMissing is obviously False, and there's nothing to
+            # invalidate.  Otherwise is was found, in which case
+            # it is either new (and thus unfixed) or existed already.
+            # In the former case, we skip only if the data is already
+            # fixed.
+            #
+            # We can also skip if the output data is already invalid.
+            #
+            if not outputData or outputData.fixed:
                 continue
-            if outputData.fixed:
+            if not outputData.valid:
                 continue
+
+            # We invalidate everything else.
             outputData._flags &= ~NodeData.VALID
             del outputData._value
             outputs.extend(list(output._outputNodes))
         return
 
+# TODO: Split GraphDataStore and Scenario; they differ more than I
+#       originally thought.
+
 class GraphDataStore(object):
-    nextID = 0
 
-    def __init__(self, graph, parentDataStore=None):
-        self._id = GraphDataStore.nextID
-        GraphDataStore.nextID += 1
+    _nextID = 0
+
+    def __init__(self, graph):
+        self._id = GraphDataStore._nextID
+        GraphDataStore._nextID += 1
         self._graph = graph
-        self._parentDataStore = parentDataStore
-
-        # TODO: Assert that the parent data store refers to the same graph.
         self._nodeDataByNodeKey = {}
+        self._activeParentDataStore = None
 
     @property
     def graph(self):
         return self._graph
 
-    def nodeData(self, node, createIfMissing=True):
+    def nodeData(self, node, createIfMissing=True, searchParent=True):
         """Returns a NodeData object from this data store
         or any of its parents.
 
-        """
-        if node.key not in self._nodeDataByNodeKey and createIfMissing:
-            self._nodeDataByNodeKey[node.key] = NodeData(node, self)
-        return self._nodeDataByNodeKey.get(node.key)
+        If no data is found, and createIfMissing is True, creates
+        a new NodeData object in the this data store.
 
+        """
+        nodeData = self._nodeDataByNodeKey.get(node.key)
+        if nodeData is None and searchParent:
+            dataStore = self._activeParentDataStore
+            while dataStore:
+                nodeData = dataStore._nodeDataByNodeKey.get(node.key)
+                if nodeData:
+                    break
+                dataStore = dataStore._activeParentDataStore
+        if not nodeData and createIfMissing:
+            nodeData = self._nodeDataByNodeKey[node.key] = NodeData(node, self)
+        return nodeData
+
+    def nodeDataDelete(self, node):
+        nodeData = self.nodeData(node, createIfMissing=False, searchParent=False)
+        if not nodeData:
+            return
+        # TODO: Also delete nodeData?
+        del self._nodeDataByNodeKey[node.key]
+
+class WhatIf(object):
+    # TODO: This is not yet used, but keeping around for use
+    #       later, potentially.
+    def __init__(self, nodeData):
+        self._nodeData = nodeData
+
+    @property
+    def dataStore(self):
+        return self.nodeData.dataStore
+
+    @property
+    def nodeData(self):
+        return self._nodeData
+
+    @property
+    def node(self):
+        return self.nodeData.node
+
+    @property
+    def nodeKey(self):
+        return self.node.key
+
+    @property
+    def value(self):
+        return self.nodeData.value
+
+class Scenario(GraphDataStore):
+    def whatIfs(self):
+        return [nodeData for nodeData in self._nodeDataByNodeKey.values() if nodeData.fixed]
+
+    def activeWhatIfs(self):
+        whatIfsByNodeKey = {}
+        dataStore = self
+        while dataStore is not None:
+            for whatIf in dataStore.whatIfs():
+                if whatIf.nodeKey in whatIfsByNodeKey:
+                    continue
+                whatIfsByNodeKey[whatIf.nodeKey] = whatIf
+            dataStore = dataStore._activeParentDataStore
+        return whatIfsByNodeKey.values()
+
+    def cleanup(self):
+        for nodeKey, nodeData in self._nodeDataByNodeKey.items():
+            if nodeData.fixed:
+                continue
+            # We could also merely invalidate the nodeData
+            # so we don't need to recreate it later, but for now 
+            # I'm just wiping it out.  Question is what is
+            # faster: NodeData object creation, or flipping
+            # nodeData flags, as well as memory considerations.
+            del self._nodeDataByNodeKey[nodeKey]
+        # TODO: Assert only valid, fixed node data remains.
+
+    def _applyWhatIfs(self):
+        # In theory the what-ifs are already 'applied' in that
+        # entering this scenario picks up the fixed values
+        # present there.
+        #
+        # But because we have may have cleaned up un-fixed
+        # node data in this scenario, or in case the node data
+        # wasn't invalidated based on a higher-level set
+        # or what-if, we specifically invalidate any outputs here
+        # just as we would if we set the values again.
+        #
+        # TODO: Seems like that's exactly what we should do;
+        #       instead of storing node data directly, just
+        #       materialize the fixed values as what-if objects
+        #       and apply them when we enter the data store.
+        #       Same difference but different approach.
+        for nodeKey, nodeData in self._nodeDataByNodeKey.items():
+            self.graph.nodeInvalidateOutputs(nodeData.node, self, createIfMissing=True)
+
+    # Unlike a regular GraphDataStore, a Scenario can be 'entered'
+    # in which case its exiting, fixed values will become 
+    # automatically active, but any previously cached data will 
+    # be removed.   This is a bit hacky, but will leave for now
+    # until I have a chance to rewrite.
+    #
+    # We could also handle this in the graph code directly,
+    # having it check whether we're asking for a value from
+    # a scenario or not.  Or we could mark all scenario values
+    # invalid when a root-level setting is made.  I'm sure
+    # there are other approaches as well.
     def __enter__(self):
-        self.prevDataStore, self.graph.activeDataStore = self.graph.activeDataStore, self
+        if self in self.graph.activeDataStores:
+            raise RuntimeError("You cannot reenter an active data store.")
+        self._activeParentDataStore = self.graph.activeDataStorePush(self)
+        self._applyWhatIfs()
         return self
 
     def __exit__(self, *args):
-        self.graph.activeDataStore = self.prevDataStore
+        # Clean up non-fixed values that may have been computed
+        # in this scenario.
+        #
+        # We do this so that when (and if) we reenter the scenario
+        # we are sure to pick up any higher-level invalidations
+        # that may have occurred, either in another scenario 
+        # (as a what if) or in the root data store.
+        self.cleanup()
+        self.graph.activeDataStorePop()     # Remove self from stack.
+        self._activeParentDataStore = None
 
-def graphDataStore(parentDataStore=None):
-    parentDataStore = parentDataStore or _graph.activeDataStore
-    return GraphDataStore(_graph, _graph.activeDataStore)
+
+def scenario():
+    return Scenario(_graph)
 
 _graph = Graph()        # We need somewhere to start.

@@ -1,4 +1,5 @@
 import nodes
+import nodes.graph
 import unittest
 
 class GraphTestCase(unittest.TestCase):
@@ -338,6 +339,213 @@ class GraphTestCase(unittest.TestCase):
         da = DictArgs()
         da.fnWithDictArgs({})
 
+    # def test_dataStore(self):
+    #     class G(nodes.GraphEnabled):
+    #         @nodes.graphMethod(nodes.Settable)
+    #         def N(self):
+    #             return 0
+    # 
+    #     g = G()
+    #   self.assertEquals(g.N(), 0)
+    #   g.N = 1
+    #   self.assertEquals(g.N(), 1)
+    #   with nodes.graphDataStore() as ds:
+    #       g.N = 2
+    #       self.assertEquals(g.N(), 2)
+    #   self.assertEquals(g.N(), 1)
+    #   g.N.clearValue()
+    #   self.assertEquals(g.N(), 0)
+    #   with ds:
+    #       self.assertEquals(g.N(), 2)
+    #   self.assertEquals(g.N(), 0)
+    #   with nodes.graphDataStore() as ds2:
+    #       g.N = 3
+    #       self.assertEquals(g.N(), 3)
+    #   self.assertEquals(g.N(), 0)
+    #   g.N = 1
+    #   self.assertEquals(g.N(), 1)
+    #   with ds:
+    #       self.assertEquals(g.N(), 2)
+    #   with ds2:
+    #       self.assertEquals(g.N(), 3)
+    #   with ds:
+    #       with ds2:
+    #           self.assertEquals(g.N(), 3)
+    #       self.assertEquals(g.N(), 2)
+    #   self.assertEquals(g.N(), 1)
+    #   g.N.clearValue()
+    #   self.assertEquals(g.N(), 0)
+    #   with ds:
+    #       with ds2:
+    #           self.assertEquals(g.N(), 3)
+    #           g.N.clearValue()
+    #           self.assertEquals(g.N(), 2)
+    #       self.assertEquals(g.N(), 2)
+    #   self.assertEquals(g.N(), 0)
+    #
+    #   with ds2:
+    #       self.assertEquals(g.N(), 0)
+    #       with ds:
+    #           self.assertEquals(g.N(), 2)
+    #       self.assertEquals(g.N(), 0)
+    #       with ds:
+    #           self.assertEquals(g.N(), 2)
+
+    def test_scenario(self):
+        class ScenarioTest(nodes.GraphEnabled):
+
+            @nodes.graphMethod
+            def X(self):
+                return self.Y() + self.Z()
+
+            @nodes.graphMethod(nodes.Settable)
+            def Y(self):
+                return 'y'
+
+            @nodes.graphMethod(nodes.Settable)
+            def Z(self):
+                return 'z'
+
+        st1 = ScenarioTest()
+        st2 = ScenarioTest(Y='y2', Z='z2')
+
+        self.assertEquals(st1.X(), 'yz')
+        self.assertEquals(st2.X(), 'y2z2')
+
+        with nodes.scenario():
+            self.assertEquals(st1.X(), 'yz')
+            self.assertEquals(st2.X(), 'y2z2')
+
+            # Setting Y should cause a set in the root data store,
+            # not this scenario.  Still, the scenario should pick
+            # up the changed root store value.
+            st1.Y = 'y1'
+            self.assertEquals(st1.Y(), 'y1')
+            self.assertEquals(st1.X(), 'y1z')
+            self.assertEquals(st2.X(), 'y2z2')
+
+        self.assertEquals(st1.X(), 'y1z')
+        self.assertEquals(st1.Y(), 'y1')
+
+        with nodes.scenario():
+            self.assertEquals(st1.X(), 'y1z')
+            self.assertEquals(st2.X(), 'y2z2')
+
+            st1.Y.clearValue()
+            self.assertEquals(st1.X(), 'yz')
+            self.assertEquals(st2.X(), 'y2z2')
+
+        self.assertEquals(st1.X(), 'yz')
+        self.assertEquals(st2.X(), 'y2z2')
+
+        with nodes.scenario() as s:
+            st1.Y.setWhatIf('y2')
+            self.assertEquals(st1.Y(), 'y2')
+            self.assertEquals(st1.X(), 'y2z')
+            whatIfs = s.whatIfs()
+
+        self.assertEquals(whatIfs, s.whatIfs())
+        self.assertEquals(st1.Y(), 'y')
+        self.assertEquals(st1.X(), 'yz')
+        self.assertEquals(st2.X(), 'y2z2')
+
+        with s:
+            self.assertEquals(st1.Y(), 'y2')
+            self.assertEquals(st1.X(), 'y2z')
+            self.assertEquals(st2.X(), 'y2z2')
+        self.assertEquals(whatIfs, s.whatIfs())
+        self.assertEquals(st1.Y(), 'y')
+        self.assertEquals(st1.X(), 'yz')
+        self.assertEquals(st2.X(), 'y2z2')
+
+        with nodes.scenario() as s2:
+            self.assertEquals(st1.Y(), 'y')
+            st1.Y.setWhatIf('y3')
+            self.assertEquals(st1.Y(), 'y3')
+            self.assertEquals(st1.X(), 'y3z')
+            with s:
+                self.assertEquals(st1.Y(), 'y2')
+                self.assertEquals(st1.X(), 'y2z')
+            self.assertEquals(st1.Y(), 'y3')
+            self.assertEquals(st1.X(), 'y3z')
+        self.assertEquals(st1.X(), 'yz')
+        with s:
+            self.assertEquals(st1.X(), 'y2z')
+            with s2:
+                self.assertEquals(st1.X(), 'y3z')
+            self.assertEquals(st1.Y(), 'y2')
+            self.assertEquals(st1.X(), 'y2z')
+
+            st1.Y.clearWhatIf()
+            self.assertEquals(st1.X(), 'yz')
+            with s2:
+                self.assertEquals(st1.X(), 'y3z')
+            self.assertEquals(st1.Y(), 'y')
+        with s:
+            self.assertEquals(st1.X(), 'yz')
+        with s2:
+            self.assertEquals(st1.X(), 'y3z')
+
+        st1.Y = 'q'
+        self.assertEquals(st1.X(), 'qz')
+        with s:
+            self.assertEquals(st1.X(), 'qz')
+        with s2:
+            self.assertEquals(st1.X(), 'y3z')
+        self.assertEquals(st1.X(), 'qz')
+        st1.Z = 't'
+        self.assertEquals(st1.X(), 'qt')
+        with s:
+            self.assertEquals(st1.X(), 'qt')
+            st1.Y.setWhatIf('q2')
+            self.assertEquals(st1.X(), 'q2t')
+            st1.Z.setWhatIf('t2')
+            self.assertEquals(st1.X(), 'q2t2')
+            with s2:
+                self.assertEquals(st1.X(), 'y3t2')
+            self.assertEquals(st1.X(), 'q2t2')
+            with s2:
+                self.assertEquals(st1.X(), 'y3t2')
+                st2.Y = 'Y'
+                self.assertEquals(st1.X(), 'y3t2')
+                self.assertEquals(st2.X(), 'Yz2')
+                st2.Y.setWhatIf('YYY')
+                self.assertEquals(st2.X(), 'YYYz2')
+                st2.Z.setWhatIf('Z')
+                self.assertEquals(st2.X(), 'YYYZ')
+                st2.Y.clearWhatIf()
+                self.assertEquals(st2.X(), 'YZ')
+                st1.Y = 'Y'
+            self.assertEquals(st2.X(), 'Yz2')
+            self.assertEquals(st1.X(), 'q2t2')
+            st1.Y.clearWhatIf()
+            self.assertEquals(st1.X(), 'Yt2')
+        self.assertEquals(st1.X(), 'Yt')
+        self.assertEquals(st2.X(), 'Yz2')
+        with s2:
+            self.assertEquals(st1.X(), 'y3t')
+            self.assertEquals(st1.Y(), 'y3')
+            self.assertEquals(st1.Z(), 't')
+            with s:
+                self.assertEquals(st1.X(), 'y3t2')
+            self.assertEquals(st1.X(), 'y3t')
+            self.assertEquals(st1.Y(), 'y3')
+            self.assertEquals(st1.Z(), 't')
+        self.assertEquals(st1.Y(), 'Y')
+        self.assertEquals(st1.X(), 'Yt')
+        st1.Y.clearValue()
+        self.assertEquals(st1.X(), 'yt')
+        self.assertEquals(st1.Y(), 'y')
+        st1.Z.clearValue()
+        self.assertEquals(st1.Y(), 'y')
+        self.assertEquals(st1.Z(), 'z')
+        self.assertEquals(st1.X(), 'yz')
+        self.assertEquals(st2.Y(), 'Y')
+        st2.Y.clearValue()
+        self.assertEquals(st2.Y(), 'y')
+        self.assertEquals(st2.X(), 'yz2')
+        st2.Z.clearValue()
+        self.assertEquals(st2.X(), 'yz')
 
 if __name__ == '__main__':
     unittest.main()
