@@ -11,41 +11,35 @@ Synopsis
 
 .. code:: python
 
-    import pynodes
-    
-    class Person(pynodes.GraphEnabled):
-        
-        @pynodes.graphEnabled(pynodes.Writable)
+    import nodes
+
+    class Person(nodes.GraphEnabled):
+        @nodes.graphMethod(nodes.Settable)
         def Name(self):
             return None
-            
-        @pynodes.graphEnabled(pynodes.Writable)
+
+        @nodes.graphMethod(nodes.Settable)
         def Scores(self):
             return []
-            
-        @pynodes.graphEnabled
+
+        @nodes.graphMethod
         def AverageScore(self):
-            return self.Scores() / len(self.Scores())
-        
+            return sum(self.Scores()) / len(self.Scores())
+
     person = Person(Name='Adam', Scores=[2.0, 1.0])
-    person.AverageScore()     -> 1.5
-    
-    with pynodes.whatIf():
+    print person.AverageScore()
+
+    with nodes.scenario():
         person.Scores.setWhatIf([1.0, 1.0])
-        person.AverageScore() -> 1.0
-    person.AverageScore()     -> 1.5
-    
-    with pynodes.scenario() as s1:
+        print person.AverageScore()
+    print person.AverageScore()
+
+    with nodes.scenario() as s1:
         person.Scores.setWhatIf([2.0])
     with s1:
-        person.AverageScore() -> 2.0
-    person.AverageScore()     -> 1.5
-    
-    person.write('/Persons/' + person.Name())
-    
-    # More to come.
-    
-        
+        print person.AverageScore()
+    print person.AverageScore()
+
 
 Components
 ----------
