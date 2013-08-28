@@ -389,19 +389,29 @@ class Graph(object):
 
     def nodeSetWhatIf(self, node, value, dataStore=None):
         if not node.overlayable:
-            raise RuntimeError("This is not a what-if enabled node.")
+            raise RuntimeError("This is not an overlayable node.")
         dataStore = dataStore or self.activeDataStore
-        if dataStore == self.rootDataStore:
-            raise RuntimeError("You cannot use what-ifs outside of a scenario.")
-        self.nodeSetValue(node, value, dataStore=dataStore)
+        if not isinstance(dataStore, Scenario):
+            raise RuntimeError("You cannot use a what-if outside of a scenario.")
+        nodeData = self.nodeData(node, dataStore=dataStore, searchParent=False)
+        if nodeData.fixed and nodeData.value == value:  # No change.
+            return
+        nodeData._value = value
+        nodeData._flags |= (NodeData.FIXED|NodeData.VALID)
+        self.nodeInvalidateOutputs(node, dataStore=dataStore)
 
     def nodeClearWhatIf(self, node, dataStore=None):
         if not node.overlayable:
-            raise RuntimeError("This is not a what-if enabled node.")
+            raise RuntimeError("This is not overlayable node.")
         dataStore = dataStore or self.activeDataStore
-        if dataStore == self.rootDataStore:
-            raise RuntimeError("You cannot use what-ifs outside of a scenario.")
-        self.nodeClearValue(node, dataStore=dataStore)
+        if not isinstance(dataStore, Scenario):
+            raise RuntimeError("You cannot use a what-if outside of a scenario.")
+        nodeData = self.nodeData(node, dataStore=dataStore, createIfMissing=False, searchParent=False)
+        if not nodeData or not nodeData.fixed:
+            raise RuntimeError("You cannot clear a value that hasn't been set.")
+        if node.key in dataStore._nodeDataByNodeKey:
+            del dataStore._nodeDataByNodeKey[node.key]
+        self.nodeInvalidateOutputs(node, dataStore=dataStore)
 
     def nodeInvalidateOutputs(self, node, dataStore=None):
         dataStore = dataStore or self.activeDataStore
@@ -413,8 +423,9 @@ class Graph(object):
                 continue
             if outputData.dataStore != dataStore:
                 outputData = self.nodeData(output, dataStore=dataStore, searchParent=False)
-            outputData._flags &= ~NodeData.VALID
-            del outputData._value
+            if outputData.valid:
+                outputData._flags &= ~NodeData.VALID
+                del outputData._value
             outputs.extend(list(output._outputNodes))
         return
 
