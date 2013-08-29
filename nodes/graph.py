@@ -1,6 +1,10 @@
 import functools
 import inspect
 
+class CLEAR(object):
+    """Sentinel to allow a node to be reset (cleared)."""
+CLEAR = CLEAR()
+
 class NodeDescriptor(object):
     # TODO: Get rid of object, do this elsewhere.
 
@@ -10,9 +14,10 @@ class NodeDescriptor(object):
     SERIALIZABLE = 0x0004                   # 00000100
     STORED       = SETTABLE|SERIALIZABLE    # 00000111          Implies SETTABLE and SERIALIZABLE.
 
-    def __init__(self, function, flags=READONLY):
+    def __init__(self, function, flags=READONLY, delegate=None, **kwargs):
         self._function = function
         self._flags = flags
+        self._delegate = delegate
 
     @property
     def function(self):
@@ -25,6 +30,10 @@ class NodeDescriptor(object):
     @property
     def flags(self):
         return self._flags
+
+    @property
+    def delegate(self):
+        return self._delegate
 
     @property
     def overlayable(self):
@@ -67,6 +76,10 @@ class NodeDescriptorBound(object):
     @property
     def flags(self):
         return self.descriptor.flags
+
+    @property
+    def delegate(self):
+        return self.descriptor.delegate
 
     @property
     def settable(self):
@@ -179,6 +192,10 @@ class Node(object):
     def flags(self):
         return self._flags
 
+    @property
+    def delegate(self):
+        return self.descriptor.delegate
+
     def valid(self, dataStore=None):
         return self._graph.nodeData(self, dataStore=dataStore).valid
 
@@ -233,6 +250,18 @@ class NodeData(object):
             return 'FIXED|VALID'
         if self.valid:
             return 'VALID'
+
+class NodeChange(object):
+    def __init__(self, descriptor, value, *args):
+        self.descriptor = descriptor
+        self.value = value
+        self.args = args
+
+    @property
+    def node(self):
+        return self.descriptor.node(*self.args)
+
+
 
 class GraphState(object):
     """Collects run-time state for a graph.  At the moment
@@ -365,9 +394,21 @@ class Graph(object):
             self._state._activeParentNode = savedParentNode
         return nodeData.value
 
-    def nodeSetValue(self, node, value, dataStore=None):
+    def nodeDelegate(self, node, value, dataStore=None):
+        nodeChanges = node.delegate(node.obj, value)
+        for change in nodeChanges:
+            self.nodeSetValue(change.node, change.value, dataStore=dataStore, callDelegate=False)
+        return
+
+    def nodeSetValue(self, node, value, dataStore=None, callDelegate=True):
+        if callDelegate and node.delegate:
+            self.nodeDelegate(node, value, dataStore=dataStore)
+            return
         if not node.settable:
             raise RuntimeError("This is not a settable node.")
+        if value == CLEAR:
+            self.nodeClearValue(node, dataStore=dataStore, callDelegate=callDelegate)
+            return
         dataStore = dataStore or self.activeDataStore
         nodeData = self.nodeData(node, dataStore=dataStore, searchParent=False)
         if nodeData.fixed and nodeData.value == value:  # No change.
@@ -376,7 +417,10 @@ class Graph(object):
         nodeData._flags |= (NodeData.FIXED|NodeData.VALID)
         self.nodeInvalidateOutputs(node, dataStore=dataStore)
 
-    def nodeClearValue(self, node, dataStore=None):
+    def nodeClearValue(self, node, dataStore=None, callDelegate=True):
+        if callDelegate and node.delegate:
+            self.nodeDelegate(node, CLEAR, dataStore=dataStore)
+            return
         if not node.settable:
             raise RuntimeError("This is not a settable node.")
         dataStore = dataStore or self.activeDataStore
