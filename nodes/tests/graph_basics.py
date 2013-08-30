@@ -5,7 +5,7 @@ import unittest
 class GraphTestCase(unittest.TestCase):
 
     def test_graphMethod(self):
-        class T(nodes.GraphEnabled):
+        class T(nodes.GraphObject):
             @nodes.graphMethod
             def f(self):
                 return True
@@ -41,7 +41,7 @@ class GraphTestCase(unittest.TestCase):
         self.assertNotIsInstance(t.o, nodes.GraphMethod)
 
     def test_simpleCalc(self):
-        class SimpleCalc(nodes.GraphEnabled):
+        class SimpleCalc(nodes.GraphObject):
             @nodes.graphMethod
             def f(self):
                 return 'f'
@@ -60,7 +60,7 @@ class GraphTestCase(unittest.TestCase):
         self.assertEquals(simpleCalc.h(), 'fh')
 
     def test_simpleSet(self):
-        class SimpleSet(nodes.GraphEnabled):
+        class SimpleSet(nodes.GraphObject):
             @nodes.graphMethod
             def f(self):
                 return 'f' + self.g()
@@ -144,7 +144,7 @@ class GraphTestCase(unittest.TestCase):
         self.assertEquals(s.h(), 'h')
 
     def test_args_consistency(self):
-        class ArgsConsistency(nodes.GraphEnabled):
+        class ArgsConsistency(nodes.GraphObject):
             @nodes.graphMethod
             def f(self):
                 return
@@ -171,7 +171,7 @@ class GraphTestCase(unittest.TestCase):
         ac.h(*[None,None,None])
 
     def test_dependencies(self):
-        class Dependencies(nodes.GraphEnabled):
+        class Dependencies(nodes.GraphObject):
             @nodes.graphMethod
             def f(self):
                 return 'f' + self.g()
@@ -296,14 +296,14 @@ class GraphTestCase(unittest.TestCase):
         # self.assertEquals(n.resolve()._outputNodes, set([]))
 
     def test_metaclass(self):
-        def makeGraphEnabledSubclass():
-            class T(nodes.GraphEnabled):
+        def makeGraphObjectSubclass():
+            class T(nodes.GraphObject):
                 def __init__(self):
                     return
-        self.assertRaises(makeGraphEnabledSubclass)
+        self.assertRaises(makeGraphObjectSubclass)
 
     def test_init(self):
-        class InitTest(nodes.GraphEnabled):
+        class InitTest(nodes.GraphObject):
             @nodes.graphMethod(nodes.Settable)
             def f(self):
                 return None
@@ -330,7 +330,7 @@ class GraphTestCase(unittest.TestCase):
         self.assertIsNone(i.g())
 
     def x_test_DictArgs(self):
-        class DictArgs(nodes.GraphEnabled):
+        class DictArgs(nodes.GraphObject):
 
             @nodes.graphMethod
             def fnWithDictArgs(self, arg):
@@ -340,7 +340,7 @@ class GraphTestCase(unittest.TestCase):
         da.fnWithDictArgs({})
 
     # def test_dataStore(self):
-    #     class G(nodes.GraphEnabled):
+    #     class G(nodes.GraphObject):
     #         @nodes.graphMethod(nodes.Settable)
     #         def N(self):
     #             return 0
@@ -392,7 +392,7 @@ class GraphTestCase(unittest.TestCase):
     #           self.assertEquals(g.N(), 2)
 
     def test_scenario(self):
-        class ScenarioTest(nodes.GraphEnabled):
+        class ScenarioTest(nodes.GraphObject):
 
             @nodes.graphMethod
             def X(self):

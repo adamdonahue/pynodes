@@ -16,10 +16,10 @@ Settable     = NodeDescriptor.SETTABLE
 Serializable = NodeDescriptor.SERIALIZABLE
 Stored       = NodeDescriptor.STORED
 
-class GraphEnabledType(type):
+class GraphObjectType(type):
     def __init__(cls, className, baseClasses, attrs):
-        if className != 'GraphEnabled' and '__init__' in attrs:
-            raise RuntimeError("Subclasses of GraphEnabledType are not allowed to redefine __init__.")
+        if className != 'GraphObject' and '__init__' in attrs:
+            raise RuntimeError("Subclasses of GraphObjectType are not allowed to redefine __init__.")
 
         for k,v in attrs.iteritems():
             if isinstance(v, GraphMethodDescriptor) and v.name != k:
@@ -52,14 +52,14 @@ class GraphMethod(NodeDescriptorBound):
     def name(self):
         return self.function.__name__
 
-class GraphEnabled(object):
-    __metaclass__ = GraphEnabledType
+class GraphObject(object):
+    __metaclass__ = GraphObjectType
 
     def __init__(self, **kwargs):
         for k in dir(self):
             v = getattr(self, k)
             if isinstance(v, GraphMethodDescriptor):
-                super(GraphEnabled, self).__setattr__(k, GraphMethod(self, v))
+                super(GraphObject, self).__setattr__(k, GraphMethod(self, v))
         for k,v in kwargs.iteritems():
             c = getattr(self, k)
             if not isinstance(c, GraphMethod):
@@ -85,7 +85,7 @@ class GraphEnabled(object):
         if isinstance(c, GraphMethod):
             c.setValue(v)
             return
-        super(GraphEnabled, self).__setattr__(n, v)
+        super(GraphObject, self).__setattr__(n, v)
 
 def graphMethod(f=0, flags=ReadOnly, *args, **kwargs):
     """Declares a on-graph method, potentially persisted
