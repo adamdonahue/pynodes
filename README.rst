@@ -1,45 +1,62 @@
 pynodes
 =======
 
-Note: Under development.
+A graph database and programming model for Python.
 
-A Python-based development ecosystem for quickly writing and delivering
-business-critical software on the Web and on native platforms.
-
-Synopsis
---------
+Example
+-------
 
 .. code:: python
 
-    import nodes
+ class Person(nodes.GraphEnabled):
 
-    class Person(nodes.GraphEnabled):
-        @nodes.graphMethod(nodes.Settable)
-        def Name(self):
-            return None
+     @nodes.graphMethod(nodes.Stored)
+     def Name(self):
+        return None
 
-        @nodes.graphMethod(nodes.Settable)
-        def Scores(self):
-            return []
+     @nodes.graphMethod(nodes.Stored)
+     def PublicKey(self):
+         return None
 
-        @nodes.graphMethod
-        def AverageScore(self):
-            return sum(self.Scores()) / len(self.Scores())
+     @nodes.graphMethod(nodes.Settable)
+     def PrivateKey(self):
+         return None
 
-    person = Person(Name='Adam', Scores=[2.0, 1.0])
-    print person.AverageScore()
+ class EncryptedMessage(nodes.GraphEnabled):
 
-    with nodes.scenario():
-        person.Scores.setWhatIf([1.0, 1.0])
-        print person.AverageScore()
-    print person.AverageScore()
+     @nodes.graphMethod(nodes.Stored)
+     def From(self):
+         return None
 
-    with nodes.scenario() as s1:
-        person.Scores.setWhatIf([2.0])
-    with s1:
-        print person.AverageScore()
-    print person.AverageScore()
+     @nodes.graphMethod(nodes.Stored)
+     def To(self):
+         return None
 
+     def setBody(self, value):
+         return [nodes.NodeChange(self._BodyStored, encrypt(value, self.To().PublicKey()))]
+
+     @nodes.graphMethod(delegate=setBody)
+     def Body(self):
+         if not self.To().PrivateKey():
+             raise RuntimeError("No private key has been set for %s!" % self.To().Name())
+         return decrypt(self._BodyStored(), self.To().PrivateKey())
+
+     @nodes.graphMethod(nodes.Stored)
+     def _BodyStored(self):
+         return ''
+
+ alice = Person(Name='Alice', PublicKey=...)
+ bob = Person(Name='Bob', PublicKey=...)
+
+ message = EncryptedMessage(From=alice, To=bob)
+ message.Body = "The president is on the line."
+
+ print message._BodyStored()    # Encrypted.
+ print message.Body()           # <error>  (No private key has been set for Alice!)
+
+ alice.PrivateKey = ...
+
+ print message.Body()           # "The president is on the line.
 
 Components
 ----------
