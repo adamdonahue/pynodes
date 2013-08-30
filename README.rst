@@ -1,10 +1,7 @@
 pynodes
 =======
 
-Note: Under development.
-
-A Python-based development ecosystem for quickly writing and delivering
-business-critical software on the Web and on native platforms.
+A graph database and programming model for Python.
 
 Example
 -------
