@@ -4,6 +4,7 @@ __version__ = "0.0.1"
 __maintainer__ = "Adam Donahue"
 __contact__ = "adam.donahue@gmail.com"
 __status__ = "Alpha"
+__title__ = 'pynodes'
 
 import functools
 import inspect
