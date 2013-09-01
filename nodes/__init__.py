@@ -65,18 +65,6 @@ class GraphObject(object):
             if not isinstance(c, GraphMethod):
                 raise RuntimeError("%s is not a graph-enabled method and cannot be set in __init__.")
             if c.node().delegate:
-                # TODO: Can we handle delegation here intelligently?  I don't think so, because
-                #       the order in which fields are set is important, and this is not
-                #       something we can determine from the graph.
-                #
-                #       For now, raising an error.
-                #       
-                #       Note that When we read from a database, though, we ignore the delegation 
-                #       step when setting stored values, as they have already been 'delegated'.
-                #
-                #       Need to think this through more to convince myself, but my hunch
-                #       is there's no surefire way to apply delegation when a new object is
-                #       created.
                 raise RuntimeError("%s is delegated and cannot be set during initialization of an object." % c.name)
             self.__setattr__(c.name, v)
 

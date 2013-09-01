@@ -10,5 +10,7 @@ setup(name='nodes',
       keywords='pynodes nodes graph functional',
       author='Adam M. Donahue',
       author_email='adam.donahue@gmail.com',
-      packages=['nodes']
+      packages=['nodes',
+                'nodesdb',
+                'rewind']
       )

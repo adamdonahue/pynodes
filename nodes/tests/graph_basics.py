@@ -547,5 +547,37 @@ class GraphTestCase(unittest.TestCase):
         st2.Z.clearValue()
         self.assertEquals(st2.X(), 'yz')
 
+    def test_subscriptions(self):
+        import functools
+
+        class SubscriptionsTest(nodes.GraphObject):
+
+            @nodes.graphMethod(nodes.Settable)
+            def X(self):
+                return 'x'
+
+            @nodes.graphMethod(nodes.Settable)
+            def Y(self):
+                return 'y'
+
+        o = SubscriptionsTest()
+        def callback_check(value=None):
+            def callback(graphMethod, *args):
+                self.assertEquals(graphMethod(*args), value)
+            return callback
+
+        subscription_x = o.X.subscribe(callback_check('foo'))
+        subscription_y = o.Y.subscribe(callback_check('bar'))
+        o.X = 'foo'
+        with nodes.scenario():
+            o.Y = 'bar'
+            o.Y.unsubscribe(subscription_y)
+            o.Y = 'baz'
+        o.X.unsubscribe(subscription_x)
+        o.X = 'baz'
+        o.Y = 'baz'
+        o.X = nodes.CLEAR
+        o.Y = nodes.CLEAR
+
 if __name__ == '__main__':
     unittest.main()

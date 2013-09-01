@@ -1,3 +1,4 @@
+import collections
 import functools
 import inspect
 
@@ -81,6 +82,12 @@ class NodeDescriptorBound(object):
     def delegate(self):
         return self.descriptor.delegate
 
+    def subscribe(self, callback):
+        return _graph.nodeSubscribe(self.node(), callback)
+
+    def unsubscribe(self, subscription):
+        _graph.nodeUnsubscribe(subscription)
+
     @property
     def settable(self):
         return self.descriptor.settable
@@ -114,9 +121,6 @@ class NodeDescriptorBound(object):
     def __call__(self, *args):
         return _graph.nodeValue(self.node(args=args))
 
-    # TODO:  The difference between sets and whatIfs is, at the
-    #        moment, rather artifical.  Sets go to the root
-    #        data store; other values go to child data stores.
     def setValue(self, value, *args):
         _graph.nodeSetValue(self.node(args=args), value, dataStore=_graph.rootDataStore)
 
@@ -261,7 +265,27 @@ class NodeChange(object):
     def node(self):
         return self.descriptor.node(*self.args)
 
+class NodeSubscription(object):
 
+    def __init__(self, callback, descriptor, args=()):
+        self._callback = callback
+        self._descriptor = descriptor
+        self._args = args
+
+    @property
+    def descriptor(self):
+        return self._descriptor
+
+    @property
+    def args(self):
+        return self._args
+
+    @property
+    def callback(self):
+        return self._callback
+
+    def notify(self):
+        self.callback(self.descriptor, *self._args)
 
 class GraphState(object):
     """Collects run-time state for a graph.  At the moment
@@ -272,8 +296,10 @@ class GraphState(object):
     """
     def __init__(self, graph):
         self._graph = graph
+        self._nodesByKey = {}
         self._activeParentNode = None
         self._activeDataStoreStack = None
+        self._subscriptionsByNodeKey = collections.defaultdict(lambda: set())
 
 class Graph(object):
 
@@ -284,7 +310,10 @@ class Graph(object):
         self._stateClass = stateClass or GraphState
         self._state = self._stateClass(self)
         self._state._activeDataStoreStack = [self._rootDataStore]
-        self._state._nodesByKey = {}
+
+    @property
+    def computing(self):
+        return self._state._activeParentNode is not None
 
     @property
     def activeDataStore(self):
@@ -400,7 +429,18 @@ class Graph(object):
             self.nodeSetValue(change.node, change.value, dataStore=dataStore, callDelegate=False)
         return
 
+    def nodeSubscribe(self, node, callback):
+        subscription = NodeSubscription(callback, node.descriptor, args=node.args)
+        self._state._subscriptionsByNodeKey[node.key].add(subscription)
+        return subscription
+
+    def nodeUnsubscribe(self, subscription):
+        node = self.nodeResolve(subscription.descriptor, subscription.args, createIfMissing=False)
+        self._state._subscriptionsByNodeKey[node.key].discard(subscription)
+
     def nodeSetValue(self, node, value, dataStore=None, callDelegate=True):
+        if self.computing:
+            raise RuntimeError("You cannot modify the graph while it is updating its state.")
         if callDelegate and node.delegate:
             self.nodeDelegate(node, value, dataStore=dataStore)
             return
@@ -416,8 +456,11 @@ class Graph(object):
         nodeData._value = value
         nodeData._flags |= (NodeData.FIXED|NodeData.VALID)
         self.nodeInvalidateOutputs(node, dataStore=dataStore)
+        self.onNodeChanged(node)
 
     def nodeClearValue(self, node, dataStore=None, callDelegate=True):
+        if self.computing:
+            raise RuntimeError("You cannot modify the graph while it is updating its state.")
         if callDelegate and node.delegate:
             self.nodeDelegate(node, CLEAR, dataStore=dataStore)
             return
@@ -430,8 +473,11 @@ class Graph(object):
         if node.key in dataStore._nodeDataByNodeKey:
             del dataStore._nodeDataByNodeKey[node.key]
         self.nodeInvalidateOutputs(node, dataStore=dataStore)
+        self.onNodeChanged(node)
 
     def nodeSetWhatIf(self, node, value, dataStore=None):
+        if self.computing:
+            raise RuntimeError("You cannot modify the graph while it is updating its state.")
         if not node.overlayable:
             raise RuntimeError("This is not an overlayable node.")
         dataStore = dataStore or self.activeDataStore
@@ -445,6 +491,8 @@ class Graph(object):
         self.nodeInvalidateOutputs(node, dataStore=dataStore)
 
     def nodeClearWhatIf(self, node, dataStore=None):
+        if self.computing:
+            raise RuntimeError("You cannot modify the graph while it is updating its state.")
         if not node.overlayable:
             raise RuntimeError("This is not overlayable node.")
         dataStore = dataStore or self.activeDataStore
@@ -460,6 +508,7 @@ class Graph(object):
     def nodeInvalidateOutputs(self, node, dataStore=None):
         dataStore = dataStore or self.activeDataStore
         outputs = list(node._outputNodes)
+        invalidated = set()
         while outputs:
             output = outputs.pop()
             outputData = self.nodeData(output, dataStore=dataStore, createIfMissing=False)
@@ -470,8 +519,13 @@ class Graph(object):
             if outputData.valid:
                 outputData._flags &= ~NodeData.VALID
                 del outputData._value
+                invalidated.add(output)
             outputs.extend(list(output._outputNodes))
-        return
+        return invalidated
+
+    def onNodeChanged(self, node):
+        for subscription in self._state._subscriptionsByNodeKey[node.key]:
+            subscription.notify()
 
 class GraphDataStore(object):
 
