@@ -4,33 +4,31 @@ class RewindEventBase(nodes.GraphObject):
 
     @nodes.graphMethod(nodes.Stored)
     def _ContainerNames(self):
-        """The names of the objects affected by this event.
+        """The names of the container affected by this event.
+
+        A container is just a class that uses the state
+        objects that will be updated via this event.
 
         """
         return [c.Name() for c in self._ContainerObjects()]
-
-    @nodes.graphMethod
-    def _ContainerPaths(self):
-        raise NotImplementedError()
 
     @nodes.graphMethod(nodes.Settable)
     def _ContainerObjects(self):
         raise NotImplementedError()
 
-    @nodes.graphMethod(nodes.Settable)
-    def AsOfDate(self):
-        return self.AsOfDateTime().date()
-
     @nodes.graphMethod(nodes.Stored)
-    def AsOfDateTime(self):
+    def AsOfTime(self):
+        # The time during which the event happened.
         return datetime.datetime.utcnow()
 
     @nodes.graphMethod
-    def _PhysicalDateTime(self):
+    def _PhysicalTime(self):
+        # The time at which the event was recorded.
         raise NotImplementedError()
 
     @nodes.graphMethod(nodes.Stored)
     def EventNamesAmended(self):
+        # The names of any events this event amends.
         return []
 
     @nodes.graphMethod(nodes.Settable)
@@ -38,5 +36,23 @@ class RewindEventBase(nodes.GraphObject):
         raise NotImplementedError()
 
 class RewindEventCancel(RewindEventBase):
-    """Cancels an existing event."""
+    """Cancels an existing event.
+
+    A cancelation logically cancels an event.  If that
+    event amended others, then those amended events are
+    still 'canceled' via the fact the event that
+    amended them was canceled.
+
+    """
+
+class RewindEventDelete(RewindEventBase):
+    """Deletes an existing event.
+
+    A delete is logically equivalent to having 'removed'
+    a single event object as if that event were never
+    written out to begin with.
+
+    """
+    
+
 

@@ -12,5 +12,7 @@ setup(name='nodes',
       author_email='adam.donahue@gmail.com',
       packages=['nodes',
                 'nodesdb',
-                'rewind']
+                'rewind',
+                'core',
+                'trading']
       )
