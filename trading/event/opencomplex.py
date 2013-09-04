@@ -2,7 +2,11 @@ import nodes
 
 from .positional import EventDealPositional
 
-class EventDealOpen(EventDealPositional)
+# Will probably join this with EventDealOpen, or
+# make it just a general positional change, with a
+# name
+
+class EventDealOpenComplex(EventDealPositional)
 
     @nodes.graphMethod(nodes.Stored)
     def Book1Name(self):
@@ -13,13 +17,6 @@ class EventDealOpen(EventDealPositional)
         return None
 
     @nodes.graphMethod(nodes.Stored)
-    def Instrument(self):
-        # name, path, identity
-        return None
+    def Positions(self):
+        return []
 
-    @nodes.graphMethod(nodes.Stored)
-    def Quantity(self):
-        # Decimal quantity, relative to book1.
-        return None
-
-    # ...
