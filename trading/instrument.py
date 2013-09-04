@@ -21,3 +21,4 @@ class Instrument(nodes.GraphObject):
     @nodes.graphMethod
     def UnscheduledEvent(self):
         return
+
