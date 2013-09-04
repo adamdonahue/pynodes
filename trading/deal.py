@@ -10,7 +10,23 @@ class Deal(nodes.GraphObject):
     def Positions(self):
         return
 
+    @nodes.graphMethod
+    def BookNames(self):
+        return []
+
+    @nodes.graphMethod
+    def Book1Name(self):
+        return
+
+    @nodes.graphMethod
+    def Book2Name(self):
+        return
+
+    @nodes.graphMethod
+    def Book2Names(self):
+        return
+
     # positions are:
-    #   ('tag', inst, qty)
+    #   (book, tag, inst, qty)
     #
     # tag used to label cash flows, etc.
