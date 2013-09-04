@@ -1,8 +1,8 @@
 import nodes
 
-# inherit from instrument
+from .instrument import Instrument
 
-class ForwardCashFlow(nodes.GraphObject):
+class ForwardCashFlow(Instrument):
 
     @nodes.graphMethod(nodes.Stored)
     def SettlementDate(self):
