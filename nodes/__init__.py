@@ -36,8 +36,8 @@ class GraphObjectType(type):
             v = getattr(cls, k)
             if isinstance(v, GraphMethodDescriptor):
                 graphMethodDescriptors.append(v)
-            cls._graphMethodDescriptors = graphMethodDescriptors
-            cls._storedGraphMethodDescriptors = [v for v in graphMethodDescriptors if v.stored]
+        cls._graphMethodDescriptors = graphMethodDescriptors
+        cls._storedGraphMethodDescriptors = [v for v in graphMethodDescriptors if v.stored]
 
 # TODO: Not sure inheritance is the right pattern.  Perhaps
 #       these next two should be uses relationships.
