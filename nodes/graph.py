@@ -288,15 +288,11 @@ class NodeSubscription(object):
         self.callback(self.descriptor, *self._args)
 
 class GraphState(object):
-    """Collects run-time state for a graph.  At the moment
-    this means keeping track of which node is being
-    computed so that we can built a dynamic dependency
-    tree.
+    """Collects run-time state for a graph.
 
     """
     def __init__(self, graph):
         self._graph = graph
-        self._nodesByKey = {}
         self._activeParentNode = None
         self._activeDataStoreStack = None
         self._subscriptionsByNodeKey = collections.defaultdict(lambda: set())
