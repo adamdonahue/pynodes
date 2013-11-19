@@ -11,14 +11,17 @@ class NodeDescriptor(object):
 
     READONLY     = 0x0000                   # 00000000
     OVERLAYABLE  = 0x0001                   # 00000001
-    SETTABLE     = 0x0003                   # 00000011          Implies OVERLAYABLE.
+    SETTABLE     = 0x0003                   # 00000011 - Implies OVERLAYABLE.
     SERIALIZABLE = 0x0004                   # 00000100
-    STORED       = SETTABLE|SERIALIZABLE    # 00000111          Implies SETTABLE and SERIALIZABLE.
+    STORED       = SETTABLE|SERIALIZABLE    # 00000111 
 
-    def __init__(self, function, flags=READONLY, delegate=None, **kwargs):
+    def __init__(self, function, flags=0, name=None, delegate=None, **kwargs):
         self._function = function
         self._flags = flags
+        self._name = name
         self._delegate = delegate
+        for k,v in kwargs.items():
+            setattr(self, k, v)
 
     @property
     def function(self):
@@ -121,6 +124,10 @@ class NodeDescriptorBound(object):
     def __call__(self, *args):
         return _graph.nodeValue(self.node(args=args))
 
+    def _setData(self, value):
+        logging.warn("Calling %s.setData: this is an experimental method." % self.__class__.__name__)
+        _graph._nodeSetData(self.node(), value)
+
     def setValue(self, value, *args):
         _graph.nodeSetValue(self.node(args=args), value, dataStore=_graph.rootDataStore)
 
@@ -140,6 +147,8 @@ class Node(object):
         self._key = key
         self._descriptor = descriptor
         self._args = args
+
+        # TODO: Remove flags, or use descriptor's flags.
         self._flags = flags
         self._inputNodes = set()
         self._outputNodes = set()
@@ -267,7 +276,11 @@ class NodeChange(object):
 
 class NodeSubscription(object):
 
-    def __init__(self, callback, descriptor, args=()):
+    def __init__(self,
+                 callback,
+                 descriptor,
+                 args=(),
+                 ):
         self._callback = callback
         self._descriptor = descriptor
         self._args = args
@@ -419,6 +432,8 @@ class Graph(object):
             self._state._activeParentNode = savedParentNode
         return nodeData.value
 
+    # TODO: Rename nodeChanges, and apply changes in usual
+    #       set routines.
     def nodeDelegate(self, node, value, dataStore=None):
         nodeChanges = node.delegate(node.obj, value)
         for change in nodeChanges:
@@ -433,6 +448,19 @@ class Graph(object):
     def nodeUnsubscribe(self, subscription):
         node = self.nodeResolve(subscription.descriptor, subscription.args, createIfMissing=False)
         self._state._subscriptionsByNodeKey[node.key].discard(subscription)
+
+    def _nodeSetData(self, node, value):
+        """Sets a value during object initialization.
+
+        Note that because the object is being initialized,
+        we do not check for graph mutation nor do we do
+        any invaliation of parent nodes.
+
+        """
+        logging.warn("Calling _nodeSetData: this is an experimental method.")
+        nodeData = self.nodeData(node, self.rootDataStore)
+        nodeData._value = value
+        nodeData._flags |= (NodeData.FIXED|NodeData.VALID)
 
     def nodeSetValue(self, node, value, dataStore=None, callDelegate=True):
         if self.computing:
@@ -510,16 +538,22 @@ class Graph(object):
             outputData = self.nodeData(output, dataStore=dataStore, createIfMissing=False)
             if outputData and outputData.fixed:
                 continue
-            if outputData.dataStore != dataStore:
+            if outputData and outputData.dataStore != dataStore:
                 outputData = self.nodeData(output, dataStore=dataStore, searchParent=False)
-            if outputData.valid:
+            if outputData and outputData.valid:
                 outputData._flags &= ~NodeData.VALID
                 del outputData._value
                 invalidated.add(output)
             outputs.extend(list(output._outputNodes))
+        for invalid in invalidated:
+            self.onNodeInvalidated(invalid)
         return invalidated
 
     def onNodeChanged(self, node):
+        for subscription in self._state._subscriptionsByNodeKey[node.key]:
+            subscription.notify()
+
+    def onNodeInvalidated(self, node):
         for subscription in self._state._subscriptionsByNodeKey[node.key]:
             subscription.notify()
 
