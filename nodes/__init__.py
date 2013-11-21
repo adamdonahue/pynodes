@@ -39,19 +39,22 @@ class GraphObjectType(type):
         cls._graphMethodDescriptors = graphMethodDescriptors
         cls._storedGraphMethodDescriptors = [v for v in graphMethodDescriptors if v.stored]
 
-# TODO: Not sure inheritance is the right pattern.  Perhaps
-#       these next two should be uses relationships.
+
+# TODO: Not convinced inheritance is the right pattern here.
+#       Perhaps the graph method classes should use descriptors.
 class GraphMethodDescriptor(NodeDescriptor):
 
     @property
     def name(self):
         return self.function.__name__
 
+
 class GraphMethod(NodeDescriptorBound):
 
     @property
     def name(self):
         return self.function.__name__
+
 
 class GraphObject(object):
     __metaclass__ = GraphObjectType
