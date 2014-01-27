@@ -4,8 +4,7 @@ registry = [
         # ('ClassName', 'ModuleName')
         ]
 
-class types(object):
-
+class Types(object):
     def __init__(self):
         self.typeMap = {}
         for c, m in registry:
@@ -16,4 +15,4 @@ class types(object):
     def __getattr__(self, k):
         return getattr(importlib.import_module(self.typeMap[k]), k)
 
-types = types()
+types = Types()
