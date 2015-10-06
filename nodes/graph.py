@@ -13,7 +13,7 @@ class NodeDescriptor(object):
     OVERLAYABLE  = 0x0001                   # 00000001
     SETTABLE     = 0x0003                   # 00000011 - Implies OVERLAYABLE.
     SERIALIZABLE = 0x0004                   # 00000100
-    STORED       = SETTABLE|SERIALIZABLE    # 00000111 
+    STORED       = SETTABLE|SERIALIZABLE    # 00000111
 
     def __init__(self, function, flags=0, name=None, delegate=None, **kwargs):
         self._function = function
@@ -391,7 +391,7 @@ class Graph(object):
         node._inputNodes.add(dependency)
         dependency._outputNodes.add(node)
 
-    # 
+    #
     # The functions below work on node data.
     #
 
