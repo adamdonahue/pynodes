@@ -8,7 +8,7 @@ class Deal(nodes.GraphObject):
 
     @nodes.graphMethod
     def Positions(self):
-        return
+        return []
 
     @nodes.graphMethod
     def BookNames(self):
