@@ -1,13 +1,14 @@
 import collections
-import functools
-import inspect
+import logging
+
 
 class CLEAR(object):
     """Sentinel to allow a node to be reset (cleared)."""
 CLEAR = CLEAR()
 
+
 class NodeDescriptor(object):
-    # TODO: Get rid of object, do this elsewhere.
+    # TODO: Remove or refactor this class.
 
     READONLY     = 0x0000                   # 00000000
     OVERLAYABLE  = 0x0001                   # 00000001
@@ -20,7 +21,7 @@ class NodeDescriptor(object):
         self._flags = flags
         self._name = name
         self._delegate = delegate
-        for k,v in kwargs.items():
+        for k, v in kwargs.items():
             setattr(self, k, v)
 
     @property
@@ -88,7 +89,8 @@ class NodeDescriptorBound(object):
     def subscribe(self, callback):
         return _graph.nodeSubscribe(self.node(), callback)
 
-    def unsubscribe(self, subscription):
+    @staticmethod
+    def unsubscribe(subscription):
         _graph.nodeUnsubscribe(subscription)
 
     @property
@@ -139,6 +141,7 @@ class NodeDescriptorBound(object):
 
     def clearWhatIf(self, *args):
         _graph.nodeClearWhatIf(self.node(args=args))
+
 
 class Node(object):
 
@@ -423,6 +426,7 @@ class Graph(object):
 
         if not nodeData or nodeData.dataStore != dataStore:
             nodeData = self.nodeData(node, dataStore=dataStore, searchParent=False)
+
         try:
             savedParentNode = self._state._activeParentNode
             self._state._activeParentNode = node
