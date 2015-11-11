@@ -4,7 +4,7 @@ class Book(nodes.GraphMethod):
 
     @nodes.graphMethod
     def Name(self):
-        return 
+        return
 
     @nodes.graphMethod
     def DealNames(self):
@@ -16,11 +16,11 @@ class Book(nodes.GraphMethod):
 
     @nodes.graphMethod
     def Positions(self):
-        return 
+        return []
 
     @nodes.graphMethod
     def AllPositions(self):
-        # even zero quantity positions when netted across deals.
-        return 
+        # Even zero quantity positions when netted across deals.
+        return []
 
 
