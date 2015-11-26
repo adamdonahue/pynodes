@@ -1,7 +1,7 @@
 pynodes
 =======
 
-A graph database and programming model for Python.
+A graph-based programming model for Python.
 
 Example
 -------
